@@ -44,6 +44,7 @@
     <button onclick="saveFile()">Save</button>
     <button onclick="refreshPreview()" class="secondary">Refresh</button>
     <button onclick="togglePreview()" id="toggleBtn" class="secondary">Hide Preview</button>
+    <button onclick="toggleEditor()" id="toggleEditorBtn" class="secondary">Hide Text</button>
     <span class="divider"></span>
     <button onclick="generatePDF()" id="pdfBtn" class="accent" style="display:none;">Generate PDF</button>
     <select id="templateSelect" style="display:none;"></select>
@@ -301,6 +302,13 @@ In template mode, edit plain markdown and generate styled PDFs.`;
         preview.classList.toggle('hidden');
         toggleBtn.textContent = preview.classList.contains('hidden') ? 'Show Preview' : 'Hide Preview';
       }
+    }
+
+    function toggleEditor() {
+      const editorPane = document.querySelector('.editor-pane');
+      const toggleEditorBtn = document.getElementById('toggleEditorBtn');
+      editorPane.classList.toggle('hidden');
+      toggleEditorBtn.textContent = editorPane.classList.contains('hidden') ? 'Show Text' : 'Hide Text';
     }
 
     function showStatus(msg, isError = false) {
