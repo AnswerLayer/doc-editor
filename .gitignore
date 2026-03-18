@@ -1,0 +1,24 @@
+# Logs
+nohup.out
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated PDFs (optional - uncomment if you want to ignore)
+# *.pdf

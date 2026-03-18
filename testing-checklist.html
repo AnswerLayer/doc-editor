@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ANS-373 + ANS-468 Testing Checklist</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        h1 { margin-bottom: 4px; }
+        .subtitle { color: #666; margin-bottom: 8px; }
+        .progress-bar {
+            background: #ddd;
+            border-radius: 8px;
+            height: 24px;
+            margin-bottom: 32px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-fill {
+            background: linear-gradient(90deg, #22c55e, #16a34a);
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-weight: 600;
+            font-size: 12px;
+            color: #333;
+        }
+        .phase {
+            background: white;
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .phase-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .phase h2 {
+            margin: 0;
+            font-size: 18px;
+        }
+        .phase-count {
+            font-size: 14px;
+            color: #666;
+            background: #f0f0f0;
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+        .phase-count.complete {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .phase-content {
+            margin-top: 16px;
+            display: none;
+        }
+        .phase.open .phase-content {
+            display: block;
+        }
+        .phase-header::after {
+            content: '▶';
+            font-size: 12px;
+            color: #999;
+            transition: transform 0.2s;
+        }
+        .phase.open .phase-header::after {
+            transform: rotate(90deg);
+        }
+        .check-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .check-item:last-child {
+            border-bottom: none;
+        }
+        .check-item input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            margin-right: 12px;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+        .check-item label {
+            cursor: pointer;
+            flex: 1;
+        }
+        .check-item.checked label {
+            color: #999;
+            text-decoration: line-through;
+        }
+        .check-item .expected {
+            font-size: 13px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .notes {
+            margin-top: 8px;
+        }
+        .notes textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 13px;
+            resize: vertical;
+            min-height: 60px;
+        }
+        .section-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 16px 0 8px 0;
+        }
+        .actions {
+            margin-bottom: 24px;
+            display: flex;
+            gap: 12px;
+        }
+        .actions button {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .actions button:hover {
+            background: #f5f5f5;
+        }
+        .risk-high { border-left: 3px solid #ef4444; padding-left: 12px; }
+        .risk-medium { border-left: 3px solid #f59e0b; padding-left: 12px; }
+        .risk-edge { border-left: 3px solid #8b5cf6; padding-left: 12px; }
+    </style>
+</head>
+<body>
+    <h1>ANS-373 + ANS-468 Testing Checklist</h1>
+    <p class="subtitle">2026-01-22 &middot; Consolidated answerlayer-core + Generation Job Tracking</p>
+
+    <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+        <div class="progress-text" id="progressText">0 / 0</div>
+    </div>
+
+    <div class="actions">
+        <button onclick="expandAll()">Expand All</button>
+        <button onclick="collapseAll()">Collapse All</button>
+        <button onclick="resetAll()">Reset Checklist</button>
+    </div>
+
+    <div id="checklist"></div>
+
+    <script>
+        const STORAGE_KEY = 'ans-373-468-testing';
+
+        const phases = [
+            {
+                id: 'phase1',
+                title: 'Phase 1: Basic Service Health',
+                items: [
+                    { id: 'p1-1', text: 'Service starts without errors', expected: 'Clean startup logs' },
+                    { id: 'p1-2', text: 'Health endpoint responds', expected: 'curl localhost:PORT/health → 200 OK' },
+                    { id: 'p1-3', text: 'OpenAPI docs load', expected: 'Swagger UI renders at /docs' },
+                    { id: 'p1-4', text: 'Database migrations apply', expected: 'Alembic runs without errors' },
+                ]
+            },
+            {
+                id: 'phase2',
+                title: 'Phase 2: Connection Management',
+                items: [
+                    { id: 'p2-1', text: 'Create a new database connection', expected: 'Connection saved, credentials encrypted' },
+                    { id: 'p2-2', text: 'OAuth flow for Snowflake/BigQuery', expected: 'Redirects work, tokens stored' },
+                    { id: 'p2-3', text: 'Test connection', expected: 'Returns schema/tables' },
+                    { id: 'p2-4', text: 'List connections', expected: 'Shows all user connections' },
+                    { id: 'p2-5', text: 'Delete connection', expected: 'Removes cleanly' },
+                ]
+            },
+            {
+                id: 'phase3',
+                title: 'Phase 3: Semantic Layer CRUD',
+                items: [
+                    { id: 'p3-1', text: 'Create entity', expected: 'Persists to DB' },
+                    { id: 'p3-2', text: 'Create dimension on entity', expected: 'Links correctly to entity' },
+                    { id: 'p3-3', text: 'Create measure', expected: 'Persists with SQL expression' },
+                    { id: 'p3-4', text: 'Create metric (derived from measures)', expected: 'Calculation works' },
+                    { id: 'p3-5', text: 'Create filter', expected: 'Persists' },
+                    { id: 'p3-6', text: 'List all semantic objects', expected: 'Returns complete layer' },
+                    { id: 'p3-7', text: 'Update entity', expected: 'Changes persist' },
+                    { id: 'p3-8', text: 'Delete entity', expected: 'Cascades to dimensions/measures' },
+                ]
+            },
+            {
+                id: 'phase4',
+                title: 'Phase 4: Generation Job Tracking (ANS-468)',
+                items: [
+                    { id: 'p4-1', text: 'POST /generate returns job_id immediately', expected: 'UUID returned, job queued' },
+                    { id: 'p4-2', text: 'GET /jobs/{id} shows status', expected: 'Status polling works (queued → running → complete)' },
+                    { id: 'p4-3', text: 'SSE stream connects with job_id', expected: 'Progress events stream' },
+                    { id: 'p4-4', text: 'Disconnect mid-generation, reconnect', expected: 'Job continues, can resume stream' },
+                    { id: 'p4-5', text: 'GET /jobs/{id} after completion', expected: 'Shows results + "complete" status' },
+                    { id: 'p4-6', text: 'Generate with invalid connection', expected: 'Job fails gracefully with error' },
+                ]
+            },
+            {
+                id: 'phase5',
+                title: 'Phase 5: File Handling',
+                items: [
+                    { id: 'p5-1', text: 'Upload CSV file', expected: 'File stored, PII detection runs' },
+                    { id: 'p5-2', text: 'Upload DuckDB file', expected: 'File accessible for queries' },
+                    { id: 'p5-3', text: 'Upload context document', expected: 'Document stored, retrievable' },
+                    { id: 'p5-4', text: 'Query uploaded CSV', expected: 'Results return' },
+                ]
+            },
+            {
+                id: 'phase6',
+                title: 'Phase 6: Frontend Integration',
+                items: [
+                    { id: 'p6-1', text: 'answerlayer-web connects to answerlayer-core', expected: 'No CORS errors, API calls succeed' },
+                    { id: 'p6-2', text: 'Connection wizard works', expected: 'Full flow completes' },
+                    { id: 'p6-3', text: 'Semantic layer editor loads', expected: 'CRUD operations work' },
+                    { id: 'p6-4', text: 'Generation UI triggers job', expected: 'Progress shows, results populate' },
+                ]
+            },
+            {
+                id: 'risks-high',
+                title: '⚠️ High Probability Issues to Watch',
+                riskClass: 'risk-high',
+                items: [
+                    { id: 'rh-1', text: 'Port/URL mismatches', expected: 'Frontend not referencing old ports (8001/8002)' },
+                    { id: 'rh-2', text: 'Import path errors', expected: 'No "from db_connector." or "from query_engine." errors' },
+                    { id: 'rh-3', text: 'Missing environment variables', expected: 'All env vars correctly named' },
+                    { id: 'rh-4', text: 'Database connection pool conflicts', expected: 'No connection exhaustion' },
+                    { id: 'rh-5', text: 'Route prefix collisions', expected: 'No duplicate endpoint paths' },
+                ]
+            },
+            {
+                id: 'risks-medium',
+                title: '⚡ Medium Probability Issues',
+                riskClass: 'risk-medium',
+                items: [
+                    { id: 'rm-1', text: 'OAuth callback URLs', expected: 'Redirect URIs point to correct service' },
+                    { id: 'rm-2', text: 'Webhook endpoints', expected: 'Stripe/Clerk webhooks target correct URLs' },
+                    { id: 'rm-3', text: 'SSE connection handling', expected: 'Reconnection works correctly' },
+                    { id: 'rm-4', text: 'Alembic migration ordering', expected: 'No dependency issues' },
+                    { id: 'rm-5', text: 'CORS configuration', expected: 'Properly configured for single origin' },
+                ]
+            },
+            {
+                id: 'edge-cases',
+                title: '🔮 Edge Cases (Surprising if They Work)',
+                riskClass: 'risk-edge',
+                items: [
+                    { id: 'ec-1', text: 'Job resume after server restart', expected: 'Jobs persist and resume after restart' },
+                    { id: 'ec-2', text: 'OAuth token refresh during long generation', expected: 'Token refreshes mid-generation' },
+                    { id: 'ec-3', text: 'Concurrent generation rate limiting', expected: 'Too many simultaneous generations prevented' },
+                    { id: 'ec-4', text: 'Resource cleanup on client disconnect', expected: 'DB connections and API calls cancelled' },
+                    { id: 'ec-5', text: 'Idempotent job creation', expected: 'Double POST deduplicated' },
+                    { id: 'ec-6', text: 'Cascade deletes with dependencies', expected: 'Entity → metrics dependency chain resolves' },
+                    { id: 'ec-7', text: 'Transaction rollback on partial failure', expected: 'Partial generation rolled back' },
+                    { id: 'ec-8', text: 'Context document usage in generation', expected: 'Agent retrieves and uses documents' },
+                ]
+            },
+        ];
+
+        function loadState() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            return saved ? JSON.parse(saved) : { checked: {}, notes: {}, open: { phase1: true } };
+        }
+
+        function saveState(state) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        function render() {
+            const state = loadState();
+            const container = document.getElementById('checklist');
+            container.innerHTML = '';
+
+            let totalItems = 0;
+            let checkedItems = 0;
+
+            phases.forEach(phase => {
+                const phaseEl = document.createElement('div');
+                phaseEl.className = 'phase' + (state.open[phase.id] ? ' open' : '');
+
+                const phaseChecked = phase.items.filter(item => state.checked[item.id]).length;
+                totalItems += phase.items.length;
+                checkedItems += phaseChecked;
+
+                const isComplete = phaseChecked === phase.items.length;
+
+                phaseEl.innerHTML = `
+                    <div class="phase-header" onclick="togglePhase('${phase.id}')">
+                        <h2>${phase.title}</h2>
+                        <span class="phase-count ${isComplete ? 'complete' : ''}">${phaseChecked}/${phase.items.length}</span>
+                    </div>
+                    <div class="phase-content">
+                        ${phase.items.map(item => `
+                            <div class="check-item ${state.checked[item.id] ? 'checked' : ''} ${phase.riskClass || ''}">
+                                <input type="checkbox" id="${item.id}"
+                                       ${state.checked[item.id] ? 'checked' : ''}
+                                       onchange="toggleItem('${item.id}')">
+                                <label for="${item.id}">
+                                    <div>${item.text}</div>
+                                    <div class="expected">Expected: ${item.expected}</div>
+                                    <div class="notes">
+                                        <textarea placeholder="Notes..."
+                                                  onchange="updateNotes('${item.id}', this.value)">${state.notes[item.id] || ''}</textarea>
+                                    </div>
+                                </label>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+
+                container.appendChild(phaseEl);
+            });
+
+            // Update progress bar
+            const percent = totalItems > 0 ? (checkedItems / totalItems * 100) : 0;
+            document.getElementById('progressFill').style.width = percent + '%';
+            document.getElementById('progressText').textContent = `${checkedItems} / ${totalItems} (${Math.round(percent)}%)`;
+        }
+
+        function togglePhase(phaseId) {
+            const state = loadState();
+            state.open[phaseId] = !state.open[phaseId];
+            saveState(state);
+            render();
+        }
+
+        function toggleItem(itemId) {
+            const state = loadState();
+            state.checked[itemId] = !state.checked[itemId];
+            saveState(state);
+            render();
+        }
+
+        function updateNotes(itemId, value) {
+            const state = loadState();
+            state.notes[itemId] = value;
+            saveState(state);
+        }
+
+        function expandAll() {
+            const state = loadState();
+            phases.forEach(p => state.open[p.id] = true);
+            saveState(state);
+            render();
+        }
+
+        function collapseAll() {
+            const state = loadState();
+            phases.forEach(p => state.open[p.id] = false);
+            saveState(state);
+            render();
+        }
+
+        function resetAll() {
+            if (confirm('Reset all checkboxes and notes?')) {
+                localStorage.removeItem(STORAGE_KEY);
+                render();
+            }
+        }
+
+        render();
+    </script>
+</body>
+</html>

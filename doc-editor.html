@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Doc Editor</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; }
+    .toolbar { padding: 10px; background: #333; color: white; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .toolbar button { padding: 8px 16px; cursor: pointer; border: none; border-radius: 4px; background: #4CAF50; color: white; font-size: 14px; }
+    .toolbar button:hover { background: #45a049; }
+    .toolbar button.secondary { background: #2196F3; }
+    .toolbar button.secondary:hover { background: #1976D2; }
+    .toolbar button.accent { background: #FF5722; }
+    .toolbar button.accent:hover { background: #E64A19; }
+    .toolbar button:disabled { background: #666; cursor: not-allowed; }
+    .toolbar select { padding: 6px 10px; border-radius: 4px; border: none; font-size: 13px; }
+    .container { display: flex; flex: 1; overflow: hidden; }
+    .pane { flex: 1; overflow: auto; }
+    .pane.hidden { display: none; }
+    .pane.editor-pane { padding: 0; display: flex; flex-direction: column; }
+    #editor { flex: 1; border: none; font-family: Monaco, 'Courier New', monospace; font-size: 13px; line-height: 1.6; resize: none; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    #preview { background: white; border-left: 1px solid #ddd; padding: 20px; }
+    #preview h1 { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+    #preview h2 { color: #333; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    #preview p { margin-bottom: 15px; line-height: 1.6; }
+    #preview hr { margin: 30px 0; border: none; border-top: 1px solid #ddd; }
+    #preview strong { color: #333; }
+    .preview-pane { padding: 0; }
+    #styled-preview { width: 100%; height: 100%; border: none; background: white; }
+    .status { color: #4CAF50; font-size: 14px; }
+    .status.error { color: #f44336; }
+    .file-info { color: #aaa; font-size: 12px; margin-left: auto; }
+    .mode-badge { background: #555; padding: 4px 8px; border-radius: 4px; font-size: 12px; text-transform: uppercase; }
+    .mode-badge.html { background: #E44D26; }
+    .mode-badge.markdown { background: #083fa1; }
+    .mode-badge.template { background: #6B46C1; }
+    .divider { width: 1px; height: 24px; background: #555; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="mode-badge" id="modeBadge">MD</span>
+    <button onclick="saveFile()">Save</button>
+    <button onclick="refreshPreview()" class="secondary">Refresh</button>
+    <button onclick="togglePreview()" id="toggleBtn" class="secondary">Hide Preview</button>
+    <span class="divider"></span>
+    <button onclick="generatePDF()" id="pdfBtn" class="accent" style="display:none;">Generate PDF</button>
+    <select id="templateSelect" style="display:none;"></select>
+    <span class="divider" id="pdfDivider" style="display:none;"></span>
+    <button onclick="copyToClipboard()" class="secondary">Copy Text</button>
+    <span class="status" id="status"></span>
+    <span class="file-info" id="fileInfo"></span>
+  </div>
+  <div class="container">
+    <div class="pane editor-pane">
+      <textarea id="editor" oninput="onEditorInput()"></textarea>
+    </div>
+    <div class="pane" id="preview"></div>
+    <div class="pane preview-pane hidden" id="styledPreviewPane">
+      <iframe id="styled-preview"></iframe>
+    </div>
+  </div>
+  <script>
+    const editor = document.getElementById('editor');
+    const preview = document.getElementById('preview');
+    const styledPreviewPane = document.getElementById('styledPreviewPane');
+    const styledPreview = document.getElementById('styled-preview');
+    const status = document.getElementById('status');
+    const modeBadge = document.getElementById('modeBadge');
+    const pdfBtn = document.getElementById('pdfBtn');
+    const templateSelect = document.getElementById('templateSelect');
+    const pdfDivider = document.getElementById('pdfDivider');
+    const fileInfo = document.getElementById('fileInfo');
+
+    // Get params from URL
+    const params = new URLSearchParams(window.location.search);
+    const filePath = params.get('file');
+    const templateParam = params.get('template');
+    const fileName = filePath ? filePath.split('/').pop() : 'document';
+
+    // Determine mode
+    const isHtmlMode = filePath && filePath.toLowerCase().endsWith('.html');
+    const isTemplateMode = templateParam || (filePath && filePath.toLowerCase().endsWith('.md') && params.has('template'));
+    const isMarkdownMode = filePath && filePath.toLowerCase().endsWith('.md') && !isTemplateMode;
+
+    // PDF output path
+    const pdfPath = filePath ? filePath.replace(/\.(html|md)$/i, '.pdf') : null;
+
+    // Set up mode UI
+    if (isHtmlMode) {
+      modeBadge.textContent = 'HTML';
+      modeBadge.classList.add('html');
+      preview.classList.add('hidden');
+      styledPreviewPane.classList.remove('hidden');
+      pdfBtn.style.display = 'inline-block';
+      pdfDivider.style.display = 'inline-block';
+    } else if (isTemplateMode) {
+      modeBadge.textContent = 'PDF';
+      modeBadge.classList.add('template');
+      preview.classList.add('hidden');
+      styledPreviewPane.classList.remove('hidden');
+      pdfBtn.style.display = 'inline-block';
+      templateSelect.style.display = 'inline-block';
+      pdfDivider.style.display = 'inline-block';
+      loadTemplates();
+    } else {
+      modeBadge.textContent = 'MD';
+      modeBadge.classList.add('markdown');
+    }
+
+    if (filePath) {
+      fileInfo.textContent = filePath;
+    }
+
+    // Load templates list
+    function loadTemplates() {
+      fetch('/templates')
+        .then(r => r.json())
+        .then(templates => {
+          templates.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t;
+            opt.textContent = t.replace('.html', '');
+            if (t === (templateParam || 'answerlayer-sow.html')) {
+              opt.selected = true;
+            }
+            templateSelect.appendChild(opt);
+          });
+        });
+    }
+
+    // Load file content
+    if (!filePath) {
+      editor.value = `# Doc Editor
+
+Usage:
+- Markdown: ?file=/path/to/file.md
+- HTML: ?file=/path/to/file.html
+- PDF (template mode): ?file=/path/to/file.md&template=answerlayer-sow.html
+
+In template mode, edit plain markdown and generate styled PDFs.`;
+      updatePreview();
+    } else {
+      fetch('/load?file=' + encodeURIComponent(filePath))
+        .then(r => r.ok ? r.text() : Promise.reject('File not found'))
+        .then(text => {
+          editor.value = text;
+          updatePreview();
+          document.title = 'Doc Editor - ' + fileName;
+        })
+        .catch(err => {
+          editor.value = '# Error loading file\n\n' + err;
+          updatePreview();
+        });
+    }
+
+    let previewTimeout = null;
+    function onEditorInput() {
+      clearTimeout(previewTimeout);
+      previewTimeout = setTimeout(updatePreview, 300);
+    }
+
+    function updatePreview() {
+      if (isHtmlMode) {
+        updateHtmlPreview();
+      } else if (isTemplateMode) {
+        updateTemplatePreview();
+      } else {
+        preview.innerHTML = marked.parse(editor.value);
+      }
+    }
+
+    function updateHtmlPreview() {
+      const blob = new Blob([editor.value], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      styledPreview.src = url;
+    }
+
+    function updateTemplatePreview() {
+      const template = templateSelect.value || 'answerlayer-sow.html';
+      // Send markdown to server for rendering
+      fetch('/render-markdown?template=' + encodeURIComponent(template), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: editor.value
+      })
+      .then(r => r.text())
+      .then(html => {
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        styledPreview.src = url;
+      })
+      .catch(err => {
+        console.error('Preview error:', err);
+      });
+    }
+
+    function refreshPreview() {
+      updatePreview();
+      showStatus('Preview refreshed');
+    }
+
+    function saveFile() {
+      if (!filePath) {
+        showStatus('No file specified!', true);
+        return;
+      }
+      fetch('/save?file=' + encodeURIComponent(filePath), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: editor.value
+      }).then(r => {
+        if (r.ok) {
+          showStatus('Saved!');
+        } else {
+          throw new Error('Save failed');
+        }
+      }).catch(() => {
+        const blob = new Blob([editor.value], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fileName;
+        a.click();
+        showStatus('Downloaded (server save failed)', true);
+      });
+    }
+
+    function generatePDF() {
+      if (!filePath) {
+        showStatus('No file specified!', true);
+        return;
+      }
+
+      pdfBtn.disabled = true;
+      pdfBtn.textContent = 'Generating...';
+
+      let generateUrl;
+      let fetchOptions = { method: 'POST' };
+
+      if (isTemplateMode) {
+        // Save markdown first, then generate PDF through template
+        const template = templateSelect.value || 'answerlayer-sow.html';
+        generateUrl = `/generate-pdf-from-markdown?file=${encodeURIComponent(filePath)}&pdf=${encodeURIComponent(pdfPath)}&template=${encodeURIComponent(template)}`;
+        fetchOptions.headers = { 'Content-Type': 'text/plain' };
+        fetchOptions.body = editor.value;
+      } else {
+        // HTML mode: save then generate
+        generateUrl = `/generate-pdf?html=${encodeURIComponent(filePath)}&pdf=${encodeURIComponent(pdfPath)}`;
+        // Save first
+        fetch('/save?file=' + encodeURIComponent(filePath), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: editor.value
+        });
+      }
+
+      fetch(generateUrl, fetchOptions)
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            const sizeKB = Math.round(data.size / 1024);
+            showStatus(`PDF generated (${sizeKB}KB) - ${data.path}`);
+          } else {
+            throw new Error('Generation failed');
+          }
+        })
+        .catch(err => {
+          showStatus('PDF generation failed: ' + err.message, true);
+        })
+        .finally(() => {
+          pdfBtn.disabled = false;
+          pdfBtn.textContent = 'Generate PDF';
+        });
+    }
+
+    function copyToClipboard() {
+      let text;
+      if (isHtmlMode) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = editor.value;
+        text = tmp.textContent || tmp.innerText;
+      } else {
+        text = editor.value
+          .replace(/^#{1,6}\s+/gm, '')
+          .replace(/\*\*([^*]+)\*\*/g, '$1')
+          .replace(/\*([^*]+)\*/g, '$1')
+          .replace(/^---+$/gm, '\n---\n')
+          .replace(/^\s*[-*]\s+/gm, '• ');
+      }
+      navigator.clipboard.writeText(text);
+      showStatus('Copied!');
+    }
+
+    function togglePreview() {
+      const toggleBtn = document.getElementById('toggleBtn');
+      if (isHtmlMode || isTemplateMode) {
+        styledPreviewPane.classList.toggle('hidden');
+        toggleBtn.textContent = styledPreviewPane.classList.contains('hidden') ? 'Show Preview' : 'Hide Preview';
+      } else {
+        preview.classList.toggle('hidden');
+        toggleBtn.textContent = preview.classList.contains('hidden') ? 'Show Preview' : 'Hide Preview';
+      }
+    }
+
+    function showStatus(msg, isError = false) {
+      status.textContent = msg;
+      status.classList.toggle('error', isError);
+      setTimeout(() => {
+        status.textContent = '';
+        status.classList.remove('error');
+      }, 4000);
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        saveFile();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
+        e.preventDefault();
+        generatePDF();
+      }
+    });
+
+    // Re-render on template change
+    templateSelect.addEventListener('change', updatePreview);
+  </script>
+</body>
+</html>

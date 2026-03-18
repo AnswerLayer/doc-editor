@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doc Editor - Documents</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            margin-bottom: 8px;
+            color: #111;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 32px;
+        }
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .section h2 {
+            margin-top: 0;
+            margin-bottom: 16px;
+            font-size: 18px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 8px;
+        }
+        .doc-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .doc-list li {
+            margin-bottom: 12px;
+        }
+        .doc-list a {
+            display: block;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            text-decoration: none;
+            color: #0066cc;
+            transition: background 0.2s;
+        }
+        .doc-list a:hover {
+            background: #e8f0fe;
+        }
+        .doc-list .title {
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        .doc-list .path {
+            font-size: 12px;
+            color: #666;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>Doc Editor</h1>
+    <p class="subtitle">Click a document to open it in the editor</p>
+
+    <div class="section">
+        <h2>Testing Checklists</h2>
+        <ul class="doc-list">
+            <li>
+                <a href="/testing-checklist.html">
+                    <div class="title">ANS-373 + ANS-468 Testing Checklist (2026-01-22)</div>
+                    <div class="path">Interactive checklist with progress tracking</div>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Testing Plans (Markdown)</h2>
+        <ul class="doc-list">
+            <li>
+                <a href="/doc-editor.html?file=/Users/server/answerlayer/answerlayer-core/2026-01-22-ANS-373-ANS-468-TESTING_PLAN.md">
+                    <div class="title">ANS-373 + ANS-468 Testing Plan (2026-01-22)</div>
+                    <div class="path">answerlayer-core/2026-01-22-ANS-373-ANS-468-TESTING_PLAN.md</div>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Quick Open</h2>
+        <form onsubmit="openFile(event)" style="display: flex; gap: 8px;">
+            <input type="text" id="filepath" placeholder="/path/to/file.md"
+                   style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace;">
+            <button type="submit"
+                    style="padding: 10px 20px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Open
+            </button>
+        </form>
+    </div>
+
+    <script>
+        function openFile(e) {
+            e.preventDefault();
+            const filepath = document.getElementById('filepath').value;
+            if (filepath) {
+                window.location.href = '/doc-editor.html?file=' + encodeURIComponent(filepath);
+            }
+        }
+    </script>
+</body>
+</html>
