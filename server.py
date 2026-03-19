@@ -8,6 +8,7 @@ import tempfile
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+PANDOC_PATH = "/usr/local/bin/pandoc"
 TEMPLATES_DIR = os.path.join(SCRIPT_DIR, "templates")
 
 def parse_frontmatter(content):
@@ -600,6 +601,106 @@ class Handler(SimpleHTTPRequestHandler):
                 self.wfile.write(str(e).encode('utf-8'))
             finally:
                 os.unlink(temp_html.name)
+
+        elif parsed.path == '/generate-docx':
+            params = parse_qs(parsed.query)
+            html_path = params.get('html', [None])[0]
+            docx_path = params.get('docx', [None])[0]
+
+            if not html_path or not docx_path:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b'Missing html or docx parameter')
+                return
+
+            if not os.path.exists(html_path):
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b'HTML file not found')
+                return
+
+            try:
+                result = subprocess.run([
+                    PANDOC_PATH,
+                    html_path,
+                    "-o", docx_path
+                ], capture_output=True, text=True, timeout=30)
+
+                if os.path.exists(docx_path):
+                    size = os.path.getsize(docx_path)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    response = json.dumps({'success': True, 'path': docx_path, 'size': size})
+                    self.wfile.write(response.encode('utf-8'))
+                    print(f'Generated DOCX: {docx_path} ({size} bytes)')
+                else:
+                    self.send_response(500)
+                    self.end_headers()
+                    error_msg = result.stderr if result.stderr else 'DOCX generation failed'
+                    self.wfile.write(error_msg.encode('utf-8'))
+            except subprocess.TimeoutExpired:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(b'DOCX generation timed out')
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(str(e).encode('utf-8'))
+
+        elif parsed.path == '/generate-docx-from-markdown':
+            params = parse_qs(parsed.query)
+            md_path = params.get('file', [None])[0]
+            docx_path = params.get('docx', [None])[0]
+
+            if not md_path or not docx_path:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b'Missing file or docx parameter')
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            if length > 0:
+                markdown_content = self.rfile.read(length).decode('utf-8')
+                with open(md_path, 'w') as f:
+                    f.write(markdown_content)
+            elif os.path.exists(md_path):
+                pass  # Use existing file
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b'Markdown file not found')
+                return
+
+            try:
+                # Pandoc can convert markdown directly to docx
+                result = subprocess.run([
+                    PANDOC_PATH,
+                    md_path,
+                    "-o", docx_path
+                ], capture_output=True, text=True, timeout=30)
+
+                if os.path.exists(docx_path):
+                    size = os.path.getsize(docx_path)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    response = json.dumps({'success': True, 'path': docx_path, 'size': size})
+                    self.wfile.write(response.encode('utf-8'))
+                    print(f'Generated DOCX from markdown: {docx_path} ({size} bytes)')
+                else:
+                    self.send_response(500)
+                    self.end_headers()
+                    error_msg = result.stderr if result.stderr else 'DOCX generation failed'
+                    self.wfile.write(error_msg.encode('utf-8'))
+            except subprocess.TimeoutExpired:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(b'DOCX generation timed out')
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(str(e).encode('utf-8'))
 
         else:
             self.send_response(404)

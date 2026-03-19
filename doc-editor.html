@@ -48,6 +48,7 @@
     <span class="divider"></span>
     <button onclick="generatePDF()" id="pdfBtn" class="accent" style="display:none;">Generate PDF</button>
     <button onclick="generatePNG()" id="pngBtn" class="accent" style="display:none;">Generate PNG</button>
+    <button onclick="generateDOCX()" id="docxBtn" class="accent" style="display:none;">Generate DOCX</button>
     <select id="templateSelect" style="display:none;"></select>
     <span class="divider" id="pdfDivider" style="display:none;"></span>
     <button onclick="copyToClipboard()" class="secondary">Copy Text</button>
@@ -89,9 +90,11 @@
     // Output paths
     const pdfPath = filePath ? filePath.replace(/\.(html|md)$/i, '.pdf') : null;
     const pngPath = filePath ? filePath.replace(/\.(html|md)$/i, '.png') : null;
+    const docxPath = filePath ? filePath.replace(/\.(html|md)$/i, '.docx') : null;
 
     // Set up mode UI
     const pngBtn = document.getElementById('pngBtn');
+    const docxBtn = document.getElementById('docxBtn');
 
     if (isHtmlMode) {
       modeBadge.textContent = 'HTML';
@@ -100,6 +103,7 @@
       styledPreviewPane.classList.remove('hidden');
       pdfBtn.style.display = 'inline-block';
       pngBtn.style.display = 'inline-block';
+      docxBtn.style.display = 'inline-block';
       pdfDivider.style.display = 'inline-block';
     } else if (isTemplateMode) {
       modeBadge.textContent = 'PDF';
@@ -108,6 +112,7 @@
       styledPreviewPane.classList.remove('hidden');
       pdfBtn.style.display = 'inline-block';
       pngBtn.style.display = 'inline-block';
+      docxBtn.style.display = 'inline-block';
       templateSelect.style.display = 'inline-block';
       pdfDivider.style.display = 'inline-block';
       loadTemplates();
@@ -323,6 +328,50 @@ In template mode, edit plain markdown and generate styled PDFs.`;
         .finally(() => {
           pngBtn.disabled = false;
           pngBtn.textContent = 'Generate PNG';
+        });
+    }
+
+    function generateDOCX() {
+      if (!filePath) {
+        showStatus('No file specified!', true);
+        return;
+      }
+
+      docxBtn.disabled = true;
+      docxBtn.textContent = 'Generating...';
+
+      let generateUrl;
+      let fetchOptions = { method: 'POST' };
+
+      if (isTemplateMode || isMarkdownMode) {
+        generateUrl = `/generate-docx-from-markdown?file=${encodeURIComponent(filePath)}&docx=${encodeURIComponent(docxPath)}`;
+        fetchOptions.headers = { 'Content-Type': 'text/plain' };
+        fetchOptions.body = editor.value;
+      } else {
+        generateUrl = `/generate-docx?html=${encodeURIComponent(filePath)}&docx=${encodeURIComponent(docxPath)}`;
+        fetch('/save?file=' + encodeURIComponent(filePath), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: editor.value
+        });
+      }
+
+      fetch(generateUrl, fetchOptions)
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            const sizeKB = Math.round(data.size / 1024);
+            showStatus(`DOCX generated (${sizeKB}KB) - ${data.path}`);
+          } else {
+            throw new Error('Generation failed');
+          }
+        })
+        .catch(err => {
+          showStatus('DOCX generation failed: ' + err.message, true);
+        })
+        .finally(() => {
+          docxBtn.disabled = false;
+          docxBtn.textContent = 'Generate DOCX';
         });
     }
 
