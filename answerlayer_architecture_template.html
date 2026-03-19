@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AnswerLayer Architecture — {{CUSTOMER}}</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy-50: #eef1fa; --navy-100: #dbe1f3; --navy-500: #aebce5;
+    --navy-300: #8997d6; --navy-400: #6275c7; --navy-500: #4a57b4;
+    --navy-600: #384393; --navy-700: #2a3477; --navy-800: #1f2858;
+    --navy-900: #151c3f; --navy-950: #0c1129;
+    --bg: #f1f4f9; --fg: #0f172a; --gray-600: #868e96;
+  }
+  @page { size: landscape; margin: 10mm; }
+  @media print {
+    body { padding: 0; max-width: none; }
+    body::before { display: none; }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); font-family: 'Space Mono', 'Courier New', monospace;
+    color: var(--fg); padding: 40px; max-width: 1560px; margin: 0 auto;
+  }
+  body::before {
+    content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none; z-index: 1000;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(21,28,63,0.012) 2px, rgba(21,28,63,0.012) 4px);
+  }
+  .header {
+    display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;
+  }
+  h1 {
+    font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 2.2rem;
+    font-weight: 700; letter-spacing: -0.02em; text-transform: uppercase;
+    color: var(--navy-900); margin: 0;
+    text-shadow: -1px 0 rgba(56,67,147,0.3), 1px 0 rgba(137,151,214,0.3);
+  }
+  .meta {
+    font-family: 'Space Mono', 'Courier New', monospace; font-size: 12px;
+    color: var(--navy-600); text-align: right; line-height: 1.6;
+    padding-top: 6px;
+  }
+  .meta strong { color: var(--navy-800); }
+  .summary {
+    font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 12px;
+    line-height: 1.6; color: var(--navy-800); max-width: 900px; margin-bottom: 24px;
+  }
+  .summary strong { color: var(--navy-900); }
+  .diagram-wrap {
+    background: white; border: 3px solid var(--navy-800); border-radius: 4px;
+    padding: 24px; position: relative;
+    box-shadow: -2px 0 rgba(56,67,147,0.15), 2px 0 rgba(137,151,214,0.15), 0 4px 20px rgba(12,17,41,0.08);
+  }
+  .diagram-wrap::before {
+    content: ''; position: absolute; top: -1px; left: -1px; right: -1px; bottom: -1px;
+    border: 1px solid var(--navy-400); border-radius: 5px; pointer-events: none;
+  }
+  svg text { font-family: 'Space Grotesk', system-ui, sans-serif; }
+  svg .mono { font-family: 'Space Mono', 'Courier New', monospace; }
+  .legend {
+    display: flex; gap: 28px; margin-top: 20px; justify-content: center; flex-wrap: wrap;
+    align-items: center;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 8px; font-size: 11px;
+    font-family: 'Space Grotesk', system-ui, sans-serif; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--navy-700);
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>AnswerLayer Architecture</h1>
+  <div class="meta">
+    <strong>Version:</strong> 1.0<br>
+    <strong>Date:</strong> 2026-03-18
+  </div>
+</div>
+<p class="summary">
+  AnswerLayer is a <strong>BYOC (Bring Your Own Cloud)</strong> application &mdash; all infrastructure runs inside the customer's AWS account. Deployment is orchestrated by <strong>Nuon</strong>, which provisions a runner agent via CloudFormation that executes Terraform to manage the application stack (ECS, RDS, ALB, S3). Below: the Nuon orchestration layer (left) and AnswerLayer application stack (right) inside <strong>{{CUSTOMER_UPPER}}'s AWS account</strong>. Customer data is accessed from <strong>{{DATASOURCE}}</strong> {{DATASOURCE_BLURB}}.
+</p>
+
+<div class="diagram-wrap">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 940" width="100%" height="auto">
+  <defs>
+    <!-- Data flow: navy-800 -->
+    <marker id="arr-data" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="var(--navy-800)" stroke-width="1.2"/>
+    </marker>
+    <!-- Orchestration: navy-500, medium -->
+    <marker id="arr-orch" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="var(--navy-500)" stroke-width="1.2"/>
+    </marker>
+    <!-- VPC endpoint: navy-400 -->
+    <marker id="arr-vpc" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="var(--navy-400)" stroke-width="1.2"/>
+    </marker>
+    <!-- Secrets: navy-500, light -->
+    <marker id="arr-secret" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto">
+      <path d="M0,0 L6,2.5 L0,5" fill="none" stroke="var(--navy-500)" stroke-width="1"/>
+    </marker>
+  </defs>
+
+  <!-- ===== ANSWERLAYER CONTROL PLANE (external, top-left) ===== -->
+  <rect x="20" y="15" width="340" height="70" rx="4" fill="var(--navy-900)" stroke="var(--navy-700)" stroke-width="2"/>
+  <text x="40" y="42" font-size="14" font-weight="700" fill="white" letter-spacing="0.06em">ANSWERLAYER CONTROL PLANE</text>
+  <text x="40" y="60" font-size="9" fill="var(--navy-300)" class="mono">api.nuon.co | runner.nuon.co</text>
+
+  <!-- End Users -->
+  <rect x="880" y="15" width="220" height="70" rx="4" fill="var(--navy-900)" stroke="var(--navy-700)" stroke-width="2"/>
+  <text x="900" y="42" font-size="14" font-weight="700" fill="white" letter-spacing="0.06em">{{CUSTOMER_UPPER}} USERS</text>
+  <text x="900" y="60" font-size="9" fill="var(--navy-300)" class="mono">Browser | API | MCP</text>
+
+  <!-- Arrow: Nuon -> Runner (routed along left margin to avoid heading text) -->
+  <path d="M50,85 L50,95 L30,95 L30,200 L40,200" stroke="var(--navy-500)" stroke-width="1.5" fill="none" marker-end="url(#arr-orch)"/>
+
+  <!-- ============================================================ -->
+  <!-- {{CUSTOMER_UPPER}} AWS ACCOUNT -->
+  <!-- ============================================================ -->
+  <rect x="20" y="120" width="1440" height="800" rx="4" fill="var(--navy-50)" stroke="var(--navy-700)" stroke-width="2"/>
+  <text x="40" y="148" font-size="15" font-weight="700" fill="var(--navy-900)" letter-spacing="0.08em">{{CUSTOMER_UPPER}} AWS ACCOUNT</text>
+  <text x="40" y="164" font-size="9" fill="var(--navy-600)" class="mono">All resources provisioned and managed within {{CUSTOMER_UPPER}}'s account | Data never leaves</text>
+
+  <!-- ===== RUNNER INFRASTRUCTURE ===== -->
+  <rect x="40" y="185" width="370" height="420" rx="3" fill="white" stroke="var(--navy-500)" stroke-width="1.5"/>
+  <text x="56" y="208" font-size="12" font-weight="700" fill="var(--navy-700)" letter-spacing="0.06em">RUNNER INFRASTRUCTURE</text>
+  <text x="56" y="224" font-size="9" fill="var(--navy-500)" class="mono">CloudFormation stack | Orchestration layer</text>
+
+  <!-- Runner Subnet -->
+  <rect x="56" y="238" width="338" height="85" rx="3" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="72" y="258" font-size="10" font-weight="600" fill="var(--navy-700)" letter-spacing="0.04em">RUNNER SUBNET</text>
+  <text x="72" y="274" font-size="9" fill="var(--navy-900)">Auto Scaling Group</text>
+  <text x="72" y="288" font-size="9" fill="var(--navy-600)" class="mono">t3a.medium | Nuon Runner Agent</text>
+  <text x="72" y="302" font-size="9" fill="var(--navy-600)" class="mono">Executes Terraform via assumed IAM roles</text>
+  <text x="72" y="314" font-size="9" fill="var(--navy-500)" class="mono">SG: All outbound</text>
+
+  <!-- IAM Roles -->
+  <rect x="56" y="335" width="338" height="75" rx="3" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="72" y="356" font-size="10" font-weight="600" fill="var(--navy-700)" letter-spacing="0.04em">IAM ROLES (STS ASSUME)</text>
+
+  <rect x="72" y="366" width="98" height="32" rx="2" fill="white" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="82" y="386" font-size="9" font-weight="600" fill="var(--navy-800)">PROVISION</text>
+
+  <rect x="180" y="366" width="104" height="32" rx="2" fill="white" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="190" y="386" font-size="9" font-weight="600" fill="var(--navy-800)">MAINTENANCE</text>
+
+  <rect x="294" y="366" width="98" height="32" rx="2" fill="white" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="304" y="386" font-size="9" font-weight="600" fill="var(--navy-800)">DEPROVISION</text>
+
+  <!-- Phone Home -->
+  <rect x="56" y="425" width="338" height="75" rx="3" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="72" y="446" font-size="10" font-weight="600" fill="var(--navy-700)" letter-spacing="0.04em">PHONE HOME LAMBDA</text>
+  <text x="72" y="462" font-size="9" fill="var(--navy-600)" class="mono">Python 3.12 | CloudFormation CustomResource</text>
+  <text x="72" y="476" font-size="9" fill="var(--navy-600)" class="mono">Reports VPC/subnet/role info back to Nuon API</text>
+  <text x="72" y="490" font-size="9" fill="var(--navy-600)" class="mono">Fires on stack Create / Update / Delete</text>
+
+  <!-- CloudWatch (runner) -->
+  <rect x="56" y="515" width="338" height="35" rx="3" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="72" y="537" font-size="9" font-weight="600" fill="var(--navy-700)">CLOUDWATCH</text>
+  <text x="174" y="537" font-size="9" fill="var(--navy-600)" class="mono">runner logs | 7d retention</text>
+
+  <!-- ============================================================ -->
+  <!-- ANSWERLAYER APPLICATION STACK -->
+  <!-- ============================================================ -->
+  <rect x="430" y="185" width="870" height="720" rx="3" fill="white" stroke="var(--navy-600)" stroke-width="1.5"/>
+  <text x="450" y="208" font-size="12" font-weight="700" fill="var(--navy-900)" letter-spacing="0.06em">ANSWERLAYER APPLICATION STACK</text>
+  <text x="450" y="224" font-size="9" fill="var(--navy-600)" class="mono">5 Terraform components deployed by Nuon Runner</text>
+
+  <!-- Arrow: Runner -> App Stack (ORCHESTRATION) -->
+  <path d="M410,310 L428,310" stroke="var(--navy-500)" stroke-width="1.5" fill="none" marker-end="url(#arr-orch)"/>
+
+  <!-- PUBLIC SUBNETS -->
+  <rect x="450" y="238" width="500" height="148" rx="3" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="466" y="258" font-size="10" font-weight="600" fill="var(--navy-600)" letter-spacing="0.06em">PUBLIC SUBNETS (3 AZs)</text>
+
+  <!-- ALB -->
+  <rect x="466" y="268" width="470" height="105" rx="3" fill="white" stroke="var(--navy-500)" stroke-width="1.5"/>
+  <text x="482" y="290" font-size="12" font-weight="700" fill="var(--navy-900)">APPLICATION LOAD BALANCER</text>
+  <text x="482" y="306" font-size="9" fill="var(--navy-600)" class="mono">Internet-facing | HTTP(80) -> HTTPS(443) redirect</text>
+  <text x="482" y="320" font-size="9" fill="var(--navy-600)" class="mono">TLS 1.3 | ACM certificate (Route53 validated)</text>
+  <text x="482" y="334" font-size="9" fill="var(--navy-600)" class="mono">Route53 A record -> ALB alias</text>
+  <text x="482" y="350" font-size="9" fill="var(--navy-500)" class="mono">SG: 80+443 from 0.0.0.0/0 | Target group :8000</text>
+
+  <!-- Arrow: Users -> ALB (DATA FLOW - thick dark) -->
+  <path d="M990,85 L990,165 L900,185 L900,268" stroke="var(--navy-800)" stroke-width="1.5" fill="none" marker-end="url(#arr-data)"/>
+
+  <!-- PRIVATE SUBNETS -->
+  <rect x="450" y="405" width="830" height="485" rx="3" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="466" y="426" font-size="10" font-weight="600" fill="var(--navy-600)" letter-spacing="0.06em">PRIVATE SUBNETS (3 AZs)</text>
+
+  <!-- ECS Cluster bar -->
+  <rect x="466" y="438" width="380" height="28" rx="2" fill="white" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="480" y="456" font-size="9" font-weight="600" fill="var(--navy-700)">ECS CLUSTER</text>
+  <text x="586" y="456" font-size="9" fill="var(--navy-500)" class="mono">FARGATE + FARGATE_SPOT | Container Insights</text>
+
+  <!-- ECS Service -->
+  <rect x="466" y="476" width="380" height="200" rx="3" fill="white" stroke="var(--navy-600)" stroke-width="2"/>
+  <rect x="468" y="478" width="376" height="196" rx="2" fill="none" stroke="var(--navy-200)" stroke-width="1"/>
+  <text x="482" y="500" font-size="12" font-weight="700" fill="var(--navy-900)">ECS FARGATE SERVICE</text>
+
+  <!-- Container -->
+  <rect x="482" y="512" width="350" height="150" rx="3" fill="var(--navy-50)" stroke="var(--navy-200)" stroke-width="1"/>
+  <text x="498" y="532" font-size="10" font-weight="600" fill="var(--navy-800)">ANSWERLAYER CONTAINER</text>
+  <text x="498" y="550" font-size="9" fill="var(--navy-600)" class="mono">answerlayer-core:{image_tag} from ECR</text>
+  <text x="498" y="566" font-size="9" fill="var(--navy-600)" class="mono">React frontend (bundled) | Health: /healthz</text>
+  <text x="498" y="584" font-size="9" fill="var(--navy-500)" class="mono">SG: :8000 from ALB SG only | All outbound</text>
+  <text x="498" y="602" font-size="9" fill="var(--navy-500)" class="mono">Task Role: S3 rw, Bedrock invoke</text>
+  <text x="498" y="620" font-size="9" fill="var(--navy-500)" class="mono">Exec Role: ECR pull, CloudWatch logs, secrets</text>
+
+  <!-- Arrow: ALB -> ECS (DATA FLOW - thick dark) -->
+  <path d="M700,373 L700,476" stroke="var(--navy-800)" stroke-width="1.5" fill="none" marker-end="url(#arr-data)"/>
+  <text x="708" y="430" font-size="9" fill="var(--navy-800)" class="mono">Target Group :8000</text>
+
+  <!-- RDS -->
+  <rect x="466" y="700" width="380" height="120" rx="3" fill="white" stroke="var(--navy-600)" stroke-width="1.5"/>
+  <text x="482" y="725" font-size="12" font-weight="700" fill="var(--navy-900)">RDS POSTGRESQL</text>
+  <text x="482" y="757" font-size="9" fill="var(--navy-600)" class="mono">User: answerlayer | Password: Secrets Manager</text>
+  <text x="482" y="771" font-size="9" fill="var(--navy-600)" class="mono">Backups: 7d | Performance Insights: on</text>
+  <text x="482" y="785" font-size="9" fill="var(--navy-600)" class="mono">Encrypted storage (AES256)</text>
+  <text x="482" y="803" font-size="9" fill="var(--navy-500)" class="mono">SG: :5432 from ECS SG only</text>
+
+  <!-- Arrow: ECS -> RDS (DATA FLOW - thick dark) -->
+  <path d="M656,676 L656,698" stroke="var(--navy-800)" stroke-width="1.5" fill="none" marker-end="url(#arr-data)"/>
+  <text x="664" y="692" font-size="9" fill="var(--navy-800)" class="mono">:5432</text>
+
+  <!-- ===== RIGHT COLUMN ===== -->
+
+  <!-- S3 -->
+  <rect x="880" y="438" width="380" height="85" rx="3" fill="white" stroke="var(--navy-500)" stroke-width="1"/>
+  <text x="896" y="460" font-size="11" font-weight="700" fill="var(--navy-900)">S3 BUCKETS</text>
+  <text x="896" y="478" font-size="9" fill="var(--navy-600)" class="mono">AES256 encryption | All public access blocked</text>
+  <text x="896" y="494" font-size="9" fill="var(--navy-500)" class="mono">IAM: s3:Put/Get/Delete via Task Role</text>
+
+  <!-- Arrow: ECS -> S3 (ORCHESTRATION) -->
+  <path d="M846,510 L878,490" stroke="var(--navy-500)" stroke-width="1.5" fill="none" marker-end="url(#arr-orch)"/>
+
+  <!-- Bedrock VPC Endpoint -->
+  <rect x="880" y="540" width="380" height="80" rx="3" fill="white" stroke="var(--navy-500)" stroke-width="1.5"/>
+  <text x="896" y="562" font-size="11" font-weight="700" fill="var(--navy-900)">BEDROCK VPC ENDPOINT</text>
+  <text x="896" y="578" font-size="9" fill="var(--navy-500)" class="mono">com.amazonaws.{region}.bedrock-runtime</text>
+  <text x="896" y="592" font-size="9" fill="var(--navy-600)" class="mono">Interface endpoint | Private DNS enabled</text>
+  <text x="896" y="606" font-size="9" fill="var(--navy-500)" class="mono">SG: HTTPS(443) from ECS SG</text>
+
+  <!-- Arrow: ECS -> Bedrock (VPC ENDPOINT - long dash, lighter color) -->
+  <path d="M846,580 L878,580" stroke="var(--navy-400)" stroke-width="1.5" fill="none" marker-end="url(#arr-vpc)" stroke-dasharray="12,6"/>
+
+  <!-- Secrets Manager -->
+  <rect x="880" y="640" width="380" height="90" rx="3" fill="white" stroke="var(--navy-400)" stroke-width="1"/>
+  <text x="896" y="662" font-size="11" font-weight="700" fill="var(--navy-900)">SECRETS MANAGER</text>
+  <text x="896" y="678" font-size="9" fill="var(--navy-600)" class="mono">answerlayer-secrets:</text>
+  <text x="896" y="692" font-size="9" fill="var(--navy-600)" class="mono">  CLERK, ENCRYPTION_KEY</text>
+  <text x="896" y="706" font-size="9" fill="var(--navy-600)" class="mono">RDS auto-managed secret: DB_PASSWORD</text>
+  <text x="896" y="720" font-size="9" fill="var(--navy-500)" class="mono">Read by Task Execution Role at container start</text>
+
+  <!-- Arrow: Secrets -> ECS (SECRETS - dotted, very light) -->
+  <path d="M878,670 L846,645" stroke="var(--navy-500)" stroke-width="1" fill="none" marker-end="url(#arr-secret)" stroke-dasharray="2,5"/>
+
+  <!-- CloudWatch + ECR -->
+  <rect x="880" y="750" width="180" height="50" rx="3" fill="white" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="896" y="772" font-size="10" font-weight="600" fill="var(--navy-700)">CLOUDWATCH</text>
+  <text x="896" y="786" font-size="9" fill="var(--navy-600)" class="mono">/ecs/answerlayer | 30d</text>
+
+  <rect x="1080" y="750" width="180" height="50" rx="3" fill="white" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="1096" y="772" font-size="10" font-weight="600" fill="var(--navy-700)">ECR PULL</text>
+  <text x="1096" y="786" font-size="9" fill="var(--navy-600)" class="mono">Cross-account IAM</text>
+
+  <!-- ===== EXTERNAL SERVICES ===== -->
+  <rect x="960" y="238" width="316" height="108" rx="3" fill="white" stroke="var(--navy-400)" stroke-width="1.5"/>
+  <text x="976" y="260" font-size="11" font-weight="700" fill="var(--navy-800)" letter-spacing="0.06em">EXTERNAL SERVICES</text>
+
+  <!-- {{DATASOURCE_UPPER}} (prominent) -->
+  <rect x="976" y="272" width="286" height="36" rx="2" fill="var(--navy-50)" stroke="var(--navy-500)" stroke-width="1.5"/>
+  <text x="988" y="288" font-size="9" font-weight="600" fill="var(--navy-800)">{{DATASOURCE_UPPER}}</text>
+  <text x="988" y="300" font-size="9" fill="var(--navy-600)" class="mono">{{CUSTOMER}} data warehouse | AWS-hosted</text>
+
+  <rect x="976" y="318" width="140" height="22" rx="2" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="988" y="334" font-size="9" font-weight="600" fill="var(--navy-800)">CLERK AUTH</text>
+
+  <!-- Arrow: ECS -> Snowflake (DATA FLOW - thick dark, routed right of app stack) -->
+  <path d="M832,630 L1380,630 L1380,290 L1264,290" stroke="var(--navy-800)" stroke-width="1.5" fill="none" marker-end="url(#arr-data)"/>
+  <text x="1388" y="490" font-size="9" fill="var(--navy-800)" class="mono" transform="rotate(90, 1388, 490)">{{DATASOURCE_CONNECTOR}}</text>
+
+</svg>
+</div>
+
+<div class="legend">
+  <div class="legend-item">
+    <svg width="40" height="14" style="vertical-align: middle;"><line x1="0" y1="7" x2="34" y2="7" stroke="var(--navy-800)" stroke-width="1.5"/><path d="M30,4 L34,7 L30,10" fill="none" stroke="var(--navy-800)" stroke-width="1.5"/></svg>
+    Data flow (HTTPS / TCP)
+  </div>
+  <div class="legend-item">
+    <svg width="40" height="14" style="vertical-align: middle;"><line x1="0" y1="7" x2="34" y2="7" stroke="var(--navy-500)" stroke-width="1.5"/><path d="M30,4 L34,7 L30,10" fill="none" stroke="var(--navy-500)" stroke-width="1.2"/></svg>
+    Orchestration / IAM
+  </div>
+  <div class="legend-item">
+    <svg width="40" height="14" style="vertical-align: middle;"><line x1="0" y1="7" x2="34" y2="7" stroke="var(--navy-400)" stroke-width="1.5" stroke-dasharray="12,6"/><path d="M30,4 L34,7 L30,10" fill="none" stroke="var(--navy-400)" stroke-width="1.2"/></svg>
+    VPC endpoint / internal AWS
+  </div>
+  <div class="legend-item">
+    <svg width="40" height="14" style="vertical-align: middle;"><line x1="0" y1="7" x2="34" y2="7" stroke="var(--navy-500)" stroke-width="1" stroke-dasharray="2,5"/><path d="M30,4 L34,7 L30,10" fill="none" stroke="var(--navy-500)" stroke-width="1"/></svg>
+    Secrets injection (startup)
+  </div>
+  <div class="legend-item">
+    <svg width="20" height="16" style="vertical-align: middle;"><rect x="1" y="1" width="18" height="14" rx="2" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1.5" stroke-dasharray="4,2"/></svg>
+    Subnet boundary
+  </div>
+</div>
+
+</body>
+</html>
