@@ -479,6 +479,128 @@ class Handler(SimpleHTTPRequestHandler):
             finally:
                 os.unlink(temp_html.name)
 
+        elif parsed.path == '/generate-png':
+            params = parse_qs(parsed.query)
+            html_path = params.get('html', [None])[0]
+            png_path = params.get('png', [None])[0]
+            width = params.get('width', ['1200'])[0]
+            height = params.get('height', ['800'])[0]
+
+            if not html_path or not png_path:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b'Missing html or png parameter')
+                return
+
+            if not os.path.exists(html_path):
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b'HTML file not found')
+                return
+
+            try:
+                result = subprocess.run([
+                    CHROME_PATH,
+                    "--headless=new",
+                    "--disable-gpu",
+                    f"--screenshot={png_path}",
+                    f"--window-size={width},{height}",
+                    html_path
+                ], capture_output=True, text=True, timeout=30)
+
+                if os.path.exists(png_path):
+                    size = os.path.getsize(png_path)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    response = json.dumps({'success': True, 'path': png_path, 'size': size})
+                    self.wfile.write(response.encode('utf-8'))
+                    print(f'Generated PNG: {png_path} ({size} bytes)')
+                else:
+                    self.send_response(500)
+                    self.end_headers()
+                    self.wfile.write(b'PNG generation failed')
+            except subprocess.TimeoutExpired:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(b'PNG generation timed out')
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(str(e).encode('utf-8'))
+
+        elif parsed.path == '/generate-png-from-markdown':
+            params = parse_qs(parsed.query)
+            md_path = params.get('file', [None])[0]
+            png_path = params.get('png', [None])[0]
+            template = params.get('template', ['answerlayer-sow.html'])[0]
+            width = params.get('width', ['1200'])[0]
+            height = params.get('height', ['800'])[0]
+
+            if not md_path or not png_path:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b'Missing file or png parameter')
+                return
+
+            length = int(self.headers.get('Content-Length', 0))
+            if length > 0:
+                markdown_content = self.rfile.read(length).decode('utf-8')
+                with open(md_path, 'w') as f:
+                    f.write(markdown_content)
+            elif os.path.exists(md_path):
+                with open(md_path, 'r') as f:
+                    markdown_content = f.read()
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b'Markdown file not found')
+                return
+
+            html, error = render_template(template, markdown_content)
+            if error:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(error.encode('utf-8'))
+                return
+
+            temp_html = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False)
+            temp_html.write(html)
+            temp_html.close()
+
+            try:
+                result = subprocess.run([
+                    CHROME_PATH,
+                    "--headless=new",
+                    "--disable-gpu",
+                    f"--screenshot={png_path}",
+                    f"--window-size={width},{height}",
+                    temp_html.name
+                ], capture_output=True, text=True, timeout=30)
+
+                if os.path.exists(png_path):
+                    size = os.path.getsize(png_path)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    response = json.dumps({'success': True, 'path': png_path, 'size': size})
+                    self.wfile.write(response.encode('utf-8'))
+                    print(f'Generated PNG from markdown: {png_path} ({size} bytes)')
+                else:
+                    self.send_response(500)
+                    self.end_headers()
+                    self.wfile.write(b'PNG generation failed')
+            except subprocess.TimeoutExpired:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(b'PNG generation timed out')
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(str(e).encode('utf-8'))
+            finally:
+                os.unlink(temp_html.name)
+
         else:
             self.send_response(404)
             self.end_headers()

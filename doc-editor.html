@@ -47,6 +47,7 @@
     <button onclick="toggleEditor()" id="toggleEditorBtn" class="secondary">Hide Text</button>
     <span class="divider"></span>
     <button onclick="generatePDF()" id="pdfBtn" class="accent" style="display:none;">Generate PDF</button>
+    <button onclick="generatePNG()" id="pngBtn" class="accent" style="display:none;">Generate PNG</button>
     <select id="templateSelect" style="display:none;"></select>
     <span class="divider" id="pdfDivider" style="display:none;"></span>
     <button onclick="copyToClipboard()" class="secondary">Copy Text</button>
@@ -85,16 +86,20 @@
     const isTemplateMode = templateParam || (filePath && filePath.toLowerCase().endsWith('.md') && params.has('template'));
     const isMarkdownMode = filePath && filePath.toLowerCase().endsWith('.md') && !isTemplateMode;
 
-    // PDF output path
+    // Output paths
     const pdfPath = filePath ? filePath.replace(/\.(html|md)$/i, '.pdf') : null;
+    const pngPath = filePath ? filePath.replace(/\.(html|md)$/i, '.png') : null;
 
     // Set up mode UI
+    const pngBtn = document.getElementById('pngBtn');
+
     if (isHtmlMode) {
       modeBadge.textContent = 'HTML';
       modeBadge.classList.add('html');
       preview.classList.add('hidden');
       styledPreviewPane.classList.remove('hidden');
       pdfBtn.style.display = 'inline-block';
+      pngBtn.style.display = 'inline-block';
       pdfDivider.style.display = 'inline-block';
     } else if (isTemplateMode) {
       modeBadge.textContent = 'PDF';
@@ -102,6 +107,7 @@
       preview.classList.add('hidden');
       styledPreviewPane.classList.remove('hidden');
       pdfBtn.style.display = 'inline-block';
+      pngBtn.style.display = 'inline-block';
       templateSelect.style.display = 'inline-block';
       pdfDivider.style.display = 'inline-block';
       loadTemplates();
@@ -272,6 +278,51 @@ In template mode, edit plain markdown and generate styled PDFs.`;
         .finally(() => {
           pdfBtn.disabled = false;
           pdfBtn.textContent = 'Generate PDF';
+        });
+    }
+
+    function generatePNG() {
+      if (!filePath) {
+        showStatus('No file specified!', true);
+        return;
+      }
+
+      pngBtn.disabled = true;
+      pngBtn.textContent = 'Generating...';
+
+      let generateUrl;
+      let fetchOptions = { method: 'POST' };
+
+      if (isTemplateMode) {
+        const template = templateSelect.value || 'answerlayer-sow.html';
+        generateUrl = `/generate-png-from-markdown?file=${encodeURIComponent(filePath)}&png=${encodeURIComponent(pngPath)}&template=${encodeURIComponent(template)}`;
+        fetchOptions.headers = { 'Content-Type': 'text/plain' };
+        fetchOptions.body = editor.value;
+      } else {
+        generateUrl = `/generate-png?html=${encodeURIComponent(filePath)}&png=${encodeURIComponent(pngPath)}`;
+        fetch('/save?file=' + encodeURIComponent(filePath), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: editor.value
+        });
+      }
+
+      fetch(generateUrl, fetchOptions)
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            const sizeKB = Math.round(data.size / 1024);
+            showStatus(`PNG generated (${sizeKB}KB) - ${data.path}`);
+          } else {
+            throw new Error('Generation failed');
+          }
+        })
+        .catch(err => {
+          showStatus('PNG generation failed: ' + err.message, true);
+        })
+        .finally(() => {
+          pngBtn.disabled = false;
+          pngBtn.textContent = 'Generate PNG';
         });
     }
 
