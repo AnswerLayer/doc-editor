@@ -38,6 +38,10 @@ def markdown_to_html(md):
     html = re.sub(r'^## (.+)$', r'<h2>\1</h2>', html, flags=re.MULTILINE)
     html = re.sub(r'^# (.+)$', r'<h1>\1</h1>', html, flags=re.MULTILINE)
 
+    # Links - must be done before bold/italic to avoid conflicts
+    # Handle markdown links [text](url) - URL can contain special chars like ? # & =
+    html = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html)
+
     # Bold
     html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
 
