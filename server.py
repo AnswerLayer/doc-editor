@@ -237,9 +237,12 @@ def render_template(template_name, markdown_content):
     html = html.replace('<!-- Populated from frontmatter -->', meta_html)
 
     # Footer meta
-    footer_meta = f"Prepared for {frontmatter.get('client', 'Client')}"
+    footer_parts = []
+    if frontmatter.get('client'):
+        footer_parts.append(f"Prepared for {frontmatter['client']}")
     if frontmatter.get('date'):
-        footer_meta += f" · {frontmatter['date']}"
+        footer_parts.append(frontmatter['date'])
+    footer_meta = ' · '.join(footer_parts)
     html = re.sub(r'<span id="footer-meta"></span>', f'<span id="footer-meta">{footer_meta}</span>', html)
 
     return html, None
