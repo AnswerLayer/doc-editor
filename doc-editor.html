@@ -49,6 +49,7 @@
     <button onclick="generatePDF()" id="pdfBtn" class="accent" style="display:none;">Generate PDF</button>
     <button onclick="generatePNG()" id="pngBtn" class="accent" style="display:none;">Generate PNG</button>
     <button onclick="generateDOCX()" id="docxBtn" class="accent" style="display:none;">Generate DOCX</button>
+    <input type="text" id="outputBasename" placeholder="output filename" style="display:none; width: 200px; padding: 6px 10px; border-radius: 4px; border: none; font-size: 13px;">
     <select id="templateSelect" style="display:none;"></select>
     <span class="divider" id="pdfDivider" style="display:none;"></span>
     <button onclick="copyToClipboard()" class="secondary">Copy Text</button>
@@ -87,10 +88,15 @@
     const isTemplateMode = templateParam || (filePath && filePath.toLowerCase().endsWith('.md') && params.has('template'));
     const isMarkdownMode = filePath && filePath.toLowerCase().endsWith('.md') && !isTemplateMode;
 
-    // Output paths
-    const pdfPath = filePath ? filePath.replace(/\.(html|md)$/i, '.pdf') : null;
-    const pngPath = filePath ? filePath.replace(/\.(html|md)$/i, '.png') : null;
-    const docxPath = filePath ? filePath.replace(/\.(html|md)$/i, '.docx') : null;
+    // Output paths - derived from basename input
+    const fileDir = filePath ? filePath.substring(0, filePath.lastIndexOf('/') + 1) : '';
+    const defaultBasename = filePath ? filePath.split('/').pop().replace(/\.(html|md)$/i, '') : 'output';
+    const outputBasenameInput = document.getElementById('outputBasename');
+
+    function getOutputPath(ext) {
+      const basename = outputBasenameInput.value || defaultBasename;
+      return fileDir + basename + ext;
+    }
 
     // Set up mode UI
     const pngBtn = document.getElementById('pngBtn');
@@ -104,6 +110,8 @@
       pdfBtn.style.display = 'inline-block';
       pngBtn.style.display = 'inline-block';
       docxBtn.style.display = 'inline-block';
+      outputBasenameInput.style.display = 'inline-block';
+      outputBasenameInput.value = defaultBasename;
       pdfDivider.style.display = 'inline-block';
     } else if (isTemplateMode) {
       modeBadge.textContent = 'PDF';
@@ -113,6 +121,8 @@
       pdfBtn.style.display = 'inline-block';
       pngBtn.style.display = 'inline-block';
       docxBtn.style.display = 'inline-block';
+      outputBasenameInput.style.display = 'inline-block';
+      outputBasenameInput.value = defaultBasename;
       templateSelect.style.display = 'inline-block';
       pdfDivider.style.display = 'inline-block';
       loadTemplates();
@@ -253,12 +263,12 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       if (isTemplateMode) {
         // Save markdown first, then generate PDF through template
         const template = templateSelect.value || 'answerlayer-sow.html';
-        generateUrl = `/generate-pdf-from-markdown?file=${encodeURIComponent(filePath)}&pdf=${encodeURIComponent(pdfPath)}&template=${encodeURIComponent(template)}`;
+        generateUrl = `/generate-pdf-from-markdown?file=${encodeURIComponent(filePath)}&pdf=${encodeURIComponent(getOutputPath('.pdf'))}&template=${encodeURIComponent(template)}`;
         fetchOptions.headers = { 'Content-Type': 'text/plain' };
         fetchOptions.body = editor.value;
       } else {
         // HTML mode: save then generate
-        generateUrl = `/generate-pdf?html=${encodeURIComponent(filePath)}&pdf=${encodeURIComponent(pdfPath)}`;
+        generateUrl = `/generate-pdf?html=${encodeURIComponent(filePath)}&pdf=${encodeURIComponent(getOutputPath('.pdf'))}`;
         // Save first
         fetch('/save?file=' + encodeURIComponent(filePath), {
           method: 'POST',
@@ -300,11 +310,11 @@ In template mode, edit plain markdown and generate styled PDFs.`;
 
       if (isTemplateMode) {
         const template = templateSelect.value || 'answerlayer-sow.html';
-        generateUrl = `/generate-png-from-markdown?file=${encodeURIComponent(filePath)}&png=${encodeURIComponent(pngPath)}&template=${encodeURIComponent(template)}`;
+        generateUrl = `/generate-png-from-markdown?file=${encodeURIComponent(filePath)}&png=${encodeURIComponent(getOutputPath('.png'))}&template=${encodeURIComponent(template)}`;
         fetchOptions.headers = { 'Content-Type': 'text/plain' };
         fetchOptions.body = editor.value;
       } else {
-        generateUrl = `/generate-png?html=${encodeURIComponent(filePath)}&png=${encodeURIComponent(pngPath)}`;
+        generateUrl = `/generate-png?html=${encodeURIComponent(filePath)}&png=${encodeURIComponent(getOutputPath('.png'))}`;
         fetch('/save?file=' + encodeURIComponent(filePath), {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain' },
@@ -344,11 +354,11 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       let fetchOptions = { method: 'POST' };
 
       if (isTemplateMode || isMarkdownMode) {
-        generateUrl = `/generate-docx-from-markdown?file=${encodeURIComponent(filePath)}&docx=${encodeURIComponent(docxPath)}`;
+        generateUrl = `/generate-docx-from-markdown?file=${encodeURIComponent(filePath)}&docx=${encodeURIComponent(getOutputPath('.docx'))}`;
         fetchOptions.headers = { 'Content-Type': 'text/plain' };
         fetchOptions.body = editor.value;
       } else {
-        generateUrl = `/generate-docx?html=${encodeURIComponent(filePath)}&docx=${encodeURIComponent(docxPath)}`;
+        generateUrl = `/generate-docx?html=${encodeURIComponent(filePath)}&docx=${encodeURIComponent(getOutputPath('.docx'))}`;
         fetch('/save?file=' + encodeURIComponent(filePath), {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain' },
