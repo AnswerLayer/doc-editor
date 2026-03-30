@@ -149,7 +149,7 @@
             const opt = document.createElement('option');
             opt.value = t;
             opt.textContent = t.replace('.html', '');
-            if (t === (templateParam || 'answerlayer-sow.html')) {
+            if (t === (templateParam || 'answerlayer-branded.html')) {
               opt.selected = true;
             }
             templateSelect.appendChild(opt);
@@ -164,7 +164,7 @@
 Usage:
 - Markdown: ?file=/path/to/file.md
 - HTML: ?file=/path/to/file.html
-- PDF (template mode): ?file=/path/to/file.md&template=answerlayer-sow.html
+- PDF (template mode): ?file=/path/to/file.md&template=answerlayer-branded.html
 
 In template mode, edit plain markdown and generate styled PDFs.`;
       updatePreview();
@@ -205,7 +205,7 @@ In template mode, edit plain markdown and generate styled PDFs.`;
     }
 
     function updateTemplatePreview() {
-      const template = templateSelect.value || 'answerlayer-sow.html';
+      const template = templateSelect.value || 'answerlayer-branded.html';
       // Send markdown to server for rendering
       fetch('/render-markdown?template=' + encodeURIComponent(template), {
         method: 'POST',
@@ -267,7 +267,7 @@ In template mode, edit plain markdown and generate styled PDFs.`;
 
       if (isTemplateMode) {
         // Save markdown first, then generate PDF through template
-        const template = templateSelect.value || 'answerlayer-sow.html';
+        const template = templateSelect.value || 'answerlayer-branded.html';
         generateUrl = `/generate-pdf-from-markdown?file=${encodeURIComponent(filePath)}&pdf=${encodeURIComponent(getOutputPath('.pdf'))}&template=${encodeURIComponent(template)}`;
         fetchOptions.headers = { 'Content-Type': 'text/plain' };
         fetchOptions.body = editor.value;
@@ -314,7 +314,7 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       let fetchOptions = { method: 'POST' };
 
       if (isTemplateMode) {
-        const template = templateSelect.value || 'answerlayer-sow.html';
+        const template = templateSelect.value || 'answerlayer-branded.html';
         generateUrl = `/generate-png-from-markdown?file=${encodeURIComponent(filePath)}&png=${encodeURIComponent(getOutputPath('.png'))}&template=${encodeURIComponent(template)}`;
         fetchOptions.headers = { 'Content-Type': 'text/plain' };
         fetchOptions.body = editor.value;

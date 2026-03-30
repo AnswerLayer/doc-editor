@@ -285,7 +285,7 @@ class Handler(SimpleHTTPRequestHandler):
         elif parsed.path == '/render-markdown':
             # Render markdown through a template
             params = parse_qs(parsed.query)
-            template = params.get('template', ['answerlayer-sow.html'])[0]
+            template = params.get('template', ['answerlayer-branded.html'])[0]
             # Content comes via POST, but we also support GET with file param
             filepath = params.get('file', [None])[0]
 
@@ -391,7 +391,7 @@ class Handler(SimpleHTTPRequestHandler):
         elif parsed.path == '/render-markdown':
             # Render markdown through template (POST with body)
             params = parse_qs(parsed.query)
-            template = params.get('template', ['answerlayer-sow.html'])[0]
+            template = params.get('template', ['answerlayer-branded.html'])[0]
 
             length = int(self.headers.get('Content-Length', 0))
             if length > 0:
@@ -416,7 +416,7 @@ class Handler(SimpleHTTPRequestHandler):
             params = parse_qs(parsed.query)
             md_path = params.get('file', [None])[0]
             pdf_path = params.get('pdf', [None])[0]
-            template = params.get('template', ['answerlayer-sow.html'])[0]
+            template = params.get('template', ['answerlayer-branded.html'])[0]
 
             if not md_path or not pdf_path:
                 self.send_response(400)
@@ -541,7 +541,7 @@ class Handler(SimpleHTTPRequestHandler):
             params = parse_qs(parsed.query)
             md_path = params.get('file', [None])[0]
             png_path = params.get('png', [None])[0]
-            template = params.get('template', ['answerlayer-sow.html'])[0]
+            template = params.get('template', ['answerlayer-branded.html'])[0]
             width = params.get('width', ['1200'])[0]
             height = params.get('height', ['800'])[0]
 

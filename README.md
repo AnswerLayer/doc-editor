@@ -28,7 +28,7 @@ http://localhost:8888/doc-editor.html?file=/path/to/file.md
 http://localhost:8888/doc-editor.html?file=/path/to/file.html
 
 # Template mode (markdown → styled PDF)
-http://localhost:8888/doc-editor.html?file=/path/to/file.md&template=answerlayer-sow.html
+http://localhost:8888/doc-editor.html?file=/path/to/file.md&template=answerlayer-branded.html
 ```
 
 ## Templates
