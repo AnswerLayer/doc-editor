@@ -77,6 +77,11 @@
     const pdfDivider = document.getElementById('pdfDivider');
     const fileInfo = document.getElementById('fileInfo');
 
+    marked.setOptions({
+      gfm: true,
+      breaks: true
+    });
+
     // Get params from URL
     const params = new URLSearchParams(window.location.search);
     const filePath = params.get('file');
