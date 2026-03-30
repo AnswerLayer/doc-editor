@@ -89,6 +89,10 @@
       color: var(--navy-900);
       margin-bottom: 8px;
       margin-top: 0;
+      break-after: avoid;
+      page-break-after: avoid;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     h2 {
@@ -102,6 +106,10 @@
       margin-bottom: 10px;
       padding-bottom: 4px;
       border-bottom: 2px solid var(--navy-300);
+      break-after: avoid;
+      page-break-after: avoid;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     h3 {
@@ -111,12 +119,18 @@
       color: var(--navy-900);
       margin-top: 16px;
       margin-bottom: 8px;
+      break-after: avoid;
+      page-break-after: avoid;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     p {
       font-size: 11px;
       line-height: 1.55;
       margin-bottom: 10px;
+      orphans: 3;
+      widows: 3;
     }
 
     strong {
@@ -136,6 +150,8 @@
       position: relative;
       margin-bottom: 6px;
       line-height: 1.5;
+      orphans: 3;
+      widows: 3;
     }
 
     li::before {
@@ -160,6 +176,22 @@
       border-collapse: collapse;
       font-size: 10px;
       margin: 12px 0;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    thead {
+      display: table-header-group;
+    }
+
+    tbody {
+      break-inside: auto;
+      page-break-inside: auto;
+    }
+
+    tr {
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     th, td {
@@ -192,6 +224,8 @@
       padding: 14px 18px;
       margin: 16px 0;
       border: none;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     blockquote p {
@@ -221,6 +255,8 @@
       margin: 12px 0;
       font-size: 11px;
       overflow-x: auto;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     pre code {

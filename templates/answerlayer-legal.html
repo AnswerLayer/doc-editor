@@ -51,6 +51,10 @@
       color: var(--navy-900);
       margin-bottom: 16px;
       margin-top: 0;
+      break-after: avoid;
+      page-break-after: avoid;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     h2 {
@@ -62,6 +66,10 @@
       margin-bottom: 12px;
       padding-bottom: 4px;
       border-bottom: 1px solid var(--gray-300);
+      break-after: avoid;
+      page-break-after: avoid;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     h3 {
@@ -71,6 +79,10 @@
       color: var(--navy-700);
       margin-top: 20px;
       margin-bottom: 8px;
+      break-after: avoid;
+      page-break-after: avoid;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     p {
@@ -78,6 +90,8 @@
       line-height: 1.65;
       margin-bottom: 12px;
       text-align: justify;
+      orphans: 3;
+      widows: 3;
     }
 
     strong {
@@ -103,6 +117,8 @@
       font-size: 11pt;
       margin-bottom: 6px;
       line-height: 1.6;
+      orphans: 3;
+      widows: 3;
     }
 
     /* Tables */
@@ -111,6 +127,22 @@
       border-collapse: collapse;
       font-size: 10pt;
       margin: 16px 0;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    thead {
+      display: table-header-group;
+    }
+
+    tbody {
+      break-inside: auto;
+      page-break-inside: auto;
+    }
+
+    tr {
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     th, td {
@@ -143,6 +175,8 @@
       padding: 12px 16px;
       margin: 16px 0;
       font-style: italic;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
 
     blockquote p {
@@ -185,8 +219,5 @@
     {{content}}
   </div>
 
-  <div class="footer">
-    <span>Confidential — For Discussion Purposes Only</span>
-  </div>
 </body>
 </html>
