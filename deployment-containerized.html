@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AnswerLayer Deployment — Containerized</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy-50: #eef1fa; --navy-100: #dbe1f3; --navy-200: #c4cce8;
+    --navy-300: #8997d6; --navy-400: #6275c7; --navy-500: #4a57b4;
+    --navy-600: #384393; --navy-700: #2a3477; --navy-800: #1f2858;
+    --navy-900: #151c3f; --navy-950: #0c1129;
+    --bg: #f1f4f9; --fg: #0f172a;
+    --amber-600: #d97706; --amber-100: #fef3c7;
+  }
+  @page { size: landscape; margin: 10mm; }
+  @media print { body { padding: 0; max-width: none; } body::before { display: none; } }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); font-family: 'Space Mono', 'Courier New', monospace;
+    color: var(--fg); padding: 40px; max-width: 1560px; margin: 0 auto;
+  }
+  body::before {
+    content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none; z-index: 1000;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(21,28,63,0.012) 2px, rgba(21,28,63,0.012) 4px);
+  }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+  h1 {
+    font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 2.2rem;
+    font-weight: 700; letter-spacing: -0.02em; text-transform: uppercase;
+    color: var(--navy-900); margin: 0;
+    text-shadow: -1px 0 rgba(56,67,147,0.3), 1px 0 rgba(137,151,214,0.3);
+  }
+  .meta {
+    font-family: 'Space Mono', monospace; font-size: 12px;
+    color: var(--navy-600); text-align: right; line-height: 1.6; padding-top: 6px;
+  }
+  .meta strong { color: var(--navy-800); }
+  .summary {
+    font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 12px;
+    line-height: 1.6; color: var(--navy-800); max-width: 1100px; margin-bottom: 24px;
+  }
+  .summary strong { color: var(--navy-900); }
+  .diagram-wrap {
+    background: white; border: 3px solid var(--navy-800); border-radius: 4px;
+    padding: 24px; position: relative;
+    box-shadow: -2px 0 rgba(56,67,147,0.15), 2px 0 rgba(137,151,214,0.15), 0 4px 20px rgba(12,17,41,0.08);
+  }
+  .diagram-wrap::before {
+    content: ''; position: absolute; top: -1px; left: -1px; right: -1px; bottom: -1px;
+    border: 1px solid var(--navy-400); border-radius: 5px; pointer-events: none;
+  }
+  svg text { font-family: 'Space Grotesk', system-ui, sans-serif; }
+  svg .mono { font-family: 'Space Mono', 'Courier New', monospace; }
+  .traits {
+    display: flex; gap: 16px; margin-top: 20px; flex-wrap: wrap; justify-content: center;
+  }
+  .trait {
+    font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 11px;
+    font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--navy-700); padding: 6px 14px;
+    border: 1px solid var(--navy-300); background: var(--navy-50);
+  }
+  .trait.highlight { border-color: var(--navy-600); color: var(--navy-900); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Containerized</h1>
+  <div class="meta">
+    <strong>Deployment Pattern 2/3</strong><br>
+    <strong>Maintained by:</strong> Customer
+  </div>
+</div>
+<p class="summary">
+  The core functionality of AnswerLayer packaged into a <strong>single container</strong>, deployable to an existing ECS cluster. Handles generation and serving of semantic components, allowing data experts to guide, steer, and validate. <strong>Deployed by the customer</strong> using their existing infrastructure — no new VPC, no new cluster, no CloudFormation. Semantic components are <strong>static by default</strong>, not part of a self-improving loop. Full control of the deployed AnswerLayer context orchestration container.
+</p>
+
+<div class="diagram-wrap">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1480 700" width="100%" height="auto">
+  <defs>
+    <marker id="arr-data" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="var(--navy-800)" stroke-width="1.2"/>
+    </marker>
+    <marker id="arr-orch" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="var(--navy-500)" stroke-width="1.2"/>
+    </marker>
+    <marker id="arr-vpc" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="var(--navy-400)" stroke-width="1.2"/>
+    </marker>
+  </defs>
+
+  <!-- ANSWERLAYER REGISTRY -->
+  <rect x="20" y="10" width="280" height="60" rx="4" fill="var(--navy-900)" stroke="var(--navy-700)" stroke-width="2"/>
+  <text x="40" y="35" font-size="13" font-weight="700" fill="white" letter-spacing="0.06em">ANSWERLAYER REGISTRY</text>
+  <text x="40" y="52" font-size="9" fill="var(--navy-300)" class="mono">Container image | Versioned releases</text>
+
+  <!-- USERS -->
+  <rect x="600" y="10" width="180" height="60" rx="4" fill="var(--navy-900)" stroke="var(--navy-700)" stroke-width="2"/>
+  <text x="620" y="35" font-size="13" font-weight="700" fill="white" letter-spacing="0.06em">USERS</text>
+  <text x="620" y="52" font-size="9" fill="var(--navy-300)" class="mono">Browser | API | MCP</text>
+
+  <!-- dbt Cloud -->
+  <rect x="1160" y="10" width="300" height="60" rx="4" fill="var(--navy-900)" stroke="var(--navy-700)" stroke-width="2"/>
+  <text x="1180" y="35" font-size="13" font-weight="700" fill="white" letter-spacing="0.06em">dbt CLOUD</text>
+  <text x="1180" y="52" font-size="9" fill="var(--navy-300)" class="mono">Export semantic models (optional)</text>
+
+  <!-- Arrow: Registry -> Container (pull) -->
+  <path d="M160,70 L160,85 L25,85 L25,215 L58,215" stroke="var(--navy-500)" stroke-width="1.5" fill="none" marker-end="url(#arr-orch)"/>
+  <text x="30" y="155" font-size="9" fill="var(--navy-500)" class="mono">docker pull</text>
+
+  <!-- ============================================================ -->
+  <!-- CUSTOMER AWS ACCOUNT -->
+  <!-- ============================================================ -->
+  <rect x="20" y="95" width="1440" height="590" rx="4" fill="var(--navy-50)" stroke="var(--navy-700)" stroke-width="2"/>
+  <text x="40" y="120" font-size="14" font-weight="700" fill="var(--navy-900)" letter-spacing="0.08em">CUSTOMER AWS ACCOUNT</text>
+
+  <!-- ============================================================ -->
+  <!-- CUSTOMER VPC -->
+  <!-- ============================================================ -->
+  <rect x="40" y="135" width="1400" height="530" rx="3" fill="white" stroke="var(--navy-600)" stroke-width="1.5"/>
+  <text x="60" y="158" font-size="12" font-weight="700" fill="var(--navy-900)" letter-spacing="0.06em">CUSTOMER VPC</text>
+  <text x="60" y="174" font-size="9" fill="var(--navy-600)" class="mono">Existing infrastructure | Customer's network, clusters, and services</text>
+
+  <!-- Customer ALB -->
+  <rect x="60" y="190" width="580" height="45" rx="3" fill="white" stroke="var(--navy-500)" stroke-width="1.5"/>
+  <text x="76" y="212" font-size="11" font-weight="700" fill="var(--navy-900)">CUSTOMER'S ALB</text>
+  <text x="260" y="212" font-size="9" fill="var(--navy-600)" class="mono">Existing load balancer | Route added for AnswerLayer</text>
+
+  <!-- Arrow: Users -> ALB -->
+  <path d="M690,70 L690,90 L350,135 L350,190" stroke="var(--navy-800)" stroke-width="1.5" fill="none" marker-end="url(#arr-data)"/>
+
+  <!-- Customer ECS Cluster -->
+  <rect x="60" y="250" width="580" height="28" rx="2" fill="white" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="76" y="268" font-size="9" font-weight="600" fill="var(--navy-700)">CUSTOMER'S ECS CLUSTER</text>
+  <text x="280" y="268" font-size="9" fill="var(--navy-500)" class="mono">Existing cluster | Shared with other services</text>
+
+  <!-- Arrow: ALB -> ECS -->
+  <path d="M350,235 L350,248" stroke="var(--navy-800)" stroke-width="1.5" fill="none" marker-end="url(#arr-data)"/>
+
+  <!-- Customer's existing services -->
+  <rect x="60" y="290" width="180" height="50" rx="3" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="76" y="312" font-size="9" font-weight="600" fill="var(--navy-600)">EXISTING SERVICE A</text>
+  <text x="76" y="326" font-size="9" fill="var(--navy-500)" class="mono">Customer workload</text>
+
+  <rect x="260" y="290" width="180" height="50" rx="3" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="276" y="312" font-size="9" font-weight="600" fill="var(--navy-600)">EXISTING SERVICE B</text>
+  <text x="276" y="326" font-size="9" fill="var(--navy-500)" class="mono">Customer workload</text>
+
+  <!-- ============================================================ -->
+  <!-- ANSWERLAYER CONTAINER (highlighted) -->
+  <!-- ============================================================ -->
+  <rect x="60" y="360" width="580" height="170" rx="3" fill="white" stroke="var(--navy-800)" stroke-width="2"/>
+  <rect x="62" y="362" width="576" height="166" rx="2" fill="none" stroke="var(--navy-200)" stroke-width="1"/>
+
+  <text x="76" y="386" font-size="12" font-weight="700" fill="var(--navy-900)">ANSWERLAYER CONTAINER</text>
+  <text x="310" y="386" font-size="9" fill="var(--navy-500)" class="mono">Single container | All-in-one</text>
+
+  <!-- Internal components -->
+  <rect x="80" y="400" width="160" height="50" rx="3" fill="var(--amber-100)" stroke="var(--amber-600)" stroke-width="1"/>
+  <text x="96" y="420" font-size="9" font-weight="600" fill="var(--navy-800)">GENERATION</text>
+  <text x="96" y="436" font-size="9" fill="var(--navy-600)" class="mono">Semantic layer</text>
+
+  <rect x="260" y="400" width="160" height="50" rx="3" fill="var(--amber-100)" stroke="var(--amber-600)" stroke-width="1"/>
+  <text x="276" y="420" font-size="9" font-weight="600" fill="var(--navy-800)">SERVING</text>
+  <text x="276" y="436" font-size="9" fill="var(--navy-600)" class="mono">Query + API + UI</text>
+
+  <rect x="440" y="400" width="180" height="50" rx="3" fill="var(--amber-100)" stroke="var(--amber-600)" stroke-width="1"/>
+  <text x="456" y="420" font-size="9" font-weight="600" fill="var(--navy-800)">CONTEXT ORCH</text>
+  <text x="456" y="436" font-size="9" fill="var(--navy-600)" class="mono">Steering + validation</text>
+
+  <!-- Arrows between components -->
+  <path d="M242,425 L258,425" stroke="var(--amber-600)" stroke-width="1" fill="none" marker-end="url(#arr-orch)"/>
+  <path d="M422,425 L438,425" stroke="var(--amber-600)" stroke-width="1" fill="none" marker-end="url(#arr-orch)"/>
+
+  <!-- Static label -->
+  <rect x="80" y="465" width="540" height="24" rx="2" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="96" y="481" font-size="9" font-weight="600" fill="var(--navy-700)">STATIC SEMANTIC COMPONENTS</text>
+  <text x="336" y="481" font-size="9" fill="var(--navy-600)" class="mono">Generated on demand | Customer-driven | No auto-improvement loop</text>
+
+  <!-- Optional state -->
+  <rect x="80" y="500" width="250" height="22" rx="2" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="96" y="515" font-size="9" fill="var(--navy-500)" class="mono">Optional: ephemeral or external state</text>
+
+  <!-- ============================================================ -->
+  <!-- CUSTOMER DATA (right side) -->
+  <!-- ============================================================ -->
+  <rect x="700" y="190" width="720" height="200" rx="3" fill="var(--navy-50)" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="716" y="212" font-size="10" font-weight="600" fill="var(--navy-700)" letter-spacing="0.04em">CUSTOMER DATA SOURCES</text>
+
+  <!-- Data Warehouse -->
+  <rect x="716" y="226" width="340" height="65" rx="3" fill="white" stroke="var(--navy-600)" stroke-width="1.5"/>
+  <text x="732" y="248" font-size="11" font-weight="700" fill="var(--navy-900)">DATA WAREHOUSE</text>
+  <text x="732" y="266" font-size="9" fill="var(--navy-600)" class="mono">Redshift, Snowflake, BigQuery, Databricks</text>
+  <text x="732" y="280" font-size="9" fill="var(--navy-500)" class="mono">dbt-materialized models</text>
+
+  <!-- Bedrock -->
+  <rect x="1076" y="226" width="330" height="65" rx="3" fill="white" stroke="var(--navy-500)" stroke-width="1.5"/>
+  <text x="1092" y="248" font-size="11" font-weight="700" fill="var(--navy-900)">BEDROCK</text>
+  <text x="1092" y="266" font-size="9" fill="var(--navy-600)" class="mono">Customer's existing VPC endpoint</text>
+  <text x="1092" y="280" font-size="9" fill="var(--navy-500)" class="mono">or new endpoint in same VPC</text>
+
+  <!-- Other infra -->
+  <rect x="716" y="305" width="160" height="35" rx="3" fill="white" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="732" y="326" font-size="9" font-weight="600" fill="var(--navy-700)">S3</text>
+
+  <rect x="896" y="305" width="160" height="35" rx="3" fill="white" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="912" y="326" font-size="9" font-weight="600" fill="var(--navy-700)">SECRETS MGR</text>
+
+  <rect x="1076" y="305" width="160" height="35" rx="3" fill="white" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="1092" y="326" font-size="9" font-weight="600" fill="var(--navy-700)">CLOUDWATCH</text>
+
+  <!-- Arrow: Container -> Data Warehouse -->
+  <path d="M642,420 L698,260 L714,260" stroke="var(--navy-800)" stroke-width="1.5" fill="none" marker-end="url(#arr-data)"/>
+  <text x="650" y="340" font-size="9" fill="var(--navy-800)" class="mono">Reads data (:5439 TLS)</text>
+
+  <!-- Arrow: Container -> Bedrock -->
+  <path d="M642,410 L1074,260" stroke="var(--navy-400)" stroke-width="1.5" fill="none" marker-end="url(#arr-vpc)" stroke-dasharray="12,6"/>
+
+  <!-- dbt export -->
+  <rect x="700" y="420" width="720" height="80" rx="3" fill="var(--navy-50)" stroke="var(--navy-400)" stroke-width="1"/>
+  <text x="716" y="444" font-size="10" font-weight="600" fill="var(--navy-700)">SEMANTIC MODEL EXPORT (OPTIONAL)</text>
+  <text x="716" y="462" font-size="9" fill="var(--navy-600)" class="mono">Export semantic layer definitions as dbt-compatible YAML</text>
+  <text x="716" y="478" font-size="9" fill="var(--navy-600)" class="mono">Metrics, dimensions, entities in open semantic interchange format</text>
+  <text x="716" y="494" font-size="9" fill="var(--navy-500)" class="mono">Customer integrates into their dbt Cloud pipeline</text>
+
+  <!-- Arrow: dbt Cloud -> export -->
+  <path d="M1310,70 L1310,90 L1100,420" stroke="var(--navy-800)" stroke-width="1.5" fill="none" marker-end="url(#arr-data)"/>
+
+  <!-- ============================================================ -->
+  <!-- RESPONSIBILITY -->
+  <!-- ============================================================ -->
+  <rect x="700" y="530" width="720" height="120" rx="3" fill="white" stroke="var(--navy-300)" stroke-width="1"/>
+  <text x="720" y="554" font-size="11" font-weight="700" fill="var(--navy-900)" letter-spacing="0.04em">RESPONSIBILITY MODEL</text>
+
+  <text x="720" y="578" font-size="10" font-weight="600" fill="var(--navy-700)">AnswerLayer provides:</text>
+  <text x="720" y="596" font-size="9" fill="var(--navy-600)" class="mono">Container image + release notes</text>
+  <text x="720" y="610" font-size="9" fill="var(--navy-600)" class="mono">Documentation + support</text>
+
+  <text x="1080" y="578" font-size="10" font-weight="600" fill="var(--navy-700)">Customer owns:</text>
+  <text x="1080" y="596" font-size="9" fill="var(--navy-600)" class="mono">Deployment, CI/CD, upgrades</text>
+  <text x="1080" y="610" font-size="9" fill="var(--navy-600)" class="mono">Infrastructure, scaling, monitoring</text>
+  <text x="1080" y="624" font-size="9" fill="var(--navy-600)" class="mono">Generation triggers + curation</text>
+  <text x="1080" y="638" font-size="9" fill="var(--navy-600)" class="mono">Incident response</text>
+
+</svg>
+</div>
+
+<div class="traits">
+  <div class="trait highlight">Customer's VPC</div>
+  <div class="trait highlight">Customer's ECS Cluster</div>
+  <div class="trait highlight">Customer Deploys</div>
+  <div class="trait highlight">Static Semantic Components</div>
+  <div class="trait">Single Container</div>
+  <div class="trait">No CloudFormation</div>
+  <div class="trait">No New Database Required</div>
+  <div class="trait">Data Never Leaves</div>
+  <div class="trait">Full Customer Control</div>
+  <div class="trait">dbt Export (Optional)</div>
+</div>
+
+</body>
+</html>
