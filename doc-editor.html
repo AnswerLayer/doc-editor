@@ -30,6 +30,7 @@
     #styled-preview { width: 100%; height: 100%; border: none; background: white; }
     .status { color: #4CAF50; font-size: 14px; }
     .status.error { color: #f44336; }
+    .status.subtle { color: #cbd5e1; }
     .file-info { color: #aaa; font-size: 12px; margin-left: auto; }
     .mode-badge { background: #555; padding: 4px 8px; border-radius: 4px; font-size: 12px; text-transform: uppercase; }
     .mode-badge.html { background: #E44D26; }
@@ -51,6 +52,7 @@
     <button onclick="generateDOCX()" id="docxBtn" class="accent" style="display:none;">Generate DOCX</button>
     <input type="text" id="outputBasename" placeholder="output filename" style="display:none; width: 200px; padding: 6px 10px; border-radius: 4px; border: none; font-size: 13px;">
     <select id="templateSelect" style="display:none;"></select>
+    <span class="status subtle" id="pdfEstimate" style="display:none;"></span>
     <span class="divider" id="pdfDivider" style="display:none;"></span>
     <button onclick="copyToClipboard()" class="secondary">Copy Text</button>
     <span class="status" id="status"></span>
@@ -74,6 +76,7 @@
     const modeBadge = document.getElementById('modeBadge');
     const pdfBtn = document.getElementById('pdfBtn');
     const templateSelect = document.getElementById('templateSelect');
+    const pdfEstimate = document.getElementById('pdfEstimate');
     const pdfDivider = document.getElementById('pdfDivider');
     const fileInfo = document.getElementById('fileInfo');
 
@@ -97,6 +100,9 @@
     const fileDir = filePath ? filePath.substring(0, filePath.lastIndexOf('/') + 1) : '';
     const defaultBasename = filePath ? filePath.split('/').pop().replace(/\.(html|md)$/i, '') : 'output';
     const outputBasenameInput = document.getElementById('outputBasename');
+    const defaultPdfTemplate = templateParam || 'answerlayer-sow.html';
+    let estimateTimeout = null;
+    let estimateRequestId = 0;
 
     function getOutputPath(ext) {
       const basename = outputBasenameInput.value || defaultBasename;
@@ -129,11 +135,15 @@
       outputBasenameInput.style.display = 'inline-block';
       outputBasenameInput.value = defaultBasename;
       templateSelect.style.display = 'inline-block';
+      pdfEstimate.style.display = 'inline-block';
       pdfDivider.style.display = 'inline-block';
       loadTemplates();
     } else {
       modeBadge.textContent = 'MD';
       modeBadge.classList.add('markdown');
+      if (filePath && filePath.toLowerCase().endsWith('.md')) {
+        pdfEstimate.style.display = 'inline-block';
+      }
     }
 
     if (filePath) {
@@ -174,11 +184,13 @@ In template mode, edit plain markdown and generate styled PDFs.`;
         .then(text => {
           editor.value = text;
           updatePreview();
+          schedulePdfEstimate();
           document.title = 'Doc Editor - ' + fileName;
         })
         .catch(err => {
           editor.value = '# Error loading file\n\n' + err;
           updatePreview();
+          schedulePdfEstimate();
         });
     }
 
@@ -186,6 +198,7 @@ In template mode, edit plain markdown and generate styled PDFs.`;
     function onEditorInput() {
       clearTimeout(previewTimeout);
       previewTimeout = setTimeout(updatePreview, 300);
+      schedulePdfEstimate();
     }
 
     function updatePreview() {
@@ -196,6 +209,51 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       } else {
         preview.innerHTML = marked.parse(editor.value);
       }
+    }
+
+    function getEstimateTemplate() {
+      return isTemplateMode ? (templateSelect.value || defaultPdfTemplate) : defaultPdfTemplate;
+    }
+
+    function schedulePdfEstimate() {
+      if (!isMarkdownMode && !isTemplateMode) {
+        return;
+      }
+
+      clearTimeout(estimateTimeout);
+      estimateTimeout = setTimeout(updatePdfEstimate, 450);
+    }
+
+    function updatePdfEstimate() {
+      if (!isMarkdownMode && !isTemplateMode) {
+        return;
+      }
+
+      const requestId = ++estimateRequestId;
+      const template = getEstimateTemplate();
+      pdfEstimate.textContent = 'Estimating PDF pages...';
+
+      fetch('/estimate-pdf-pages?template=' + encodeURIComponent(template), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: editor.value
+      })
+      .then(r => r.ok ? r.json() : r.text().then(text => Promise.reject(new Error(text || 'Estimate failed'))))
+      .then(data => {
+        if (requestId !== estimateRequestId) {
+          return;
+        }
+
+        const label = data.pageCount === 1 ? '1 PDF page' : `${data.pageCount} PDF pages`;
+        pdfEstimate.textContent = `Est. ${label}`;
+        pdfEstimate.title = `Estimated with ${template.replace('.html', '')}`;
+      })
+      .catch(() => {
+        if (requestId !== estimateRequestId) {
+          return;
+        }
+        pdfEstimate.textContent = 'PDF estimate unavailable';
+      });
     }
 
     function updateHtmlPreview() {
@@ -287,7 +345,9 @@ In template mode, edit plain markdown and generate styled PDFs.`;
         .then(data => {
           if (data.success) {
             const sizeKB = Math.round(data.size / 1024);
-            showStatus(`PDF generated (${sizeKB}KB) - ${data.path}`);
+            const pageInfo = data.pageCount ? `, ${data.pageCount} ${data.pageCount === 1 ? 'page' : 'pages'}` : '';
+            showStatus(`PDF generated (${sizeKB}KB${pageInfo}) - ${data.path}`);
+            schedulePdfEstimate();
           } else {
             throw new Error('Generation failed');
           }
@@ -448,7 +508,10 @@ In template mode, edit plain markdown and generate styled PDFs.`;
     });
 
     // Re-render on template change
-    templateSelect.addEventListener('change', updatePreview);
+    templateSelect.addEventListener('change', () => {
+      updatePreview();
+      schedulePdfEstimate();
+    });
   </script>
 </body>
 </html>

@@ -8,6 +8,7 @@ A browser-based document editor with live preview and PDF generation.
 - **HTML mode**: Edit `.html` files with iframe preview
 - **Template mode**: Edit markdown and render through styled HTML templates for PDF generation
 - **PDF generation**: Uses headless Chrome to generate PDFs from HTML or templated markdown
+- **PDF page estimate**: Shows a live estimated PDF page count for Markdown files
 - **Keyboard shortcuts**: `Cmd+S` to save, `Cmd+P` to generate PDF
 
 ## Usage
@@ -39,6 +40,12 @@ Templates live in the `templates/` directory. They're HTML files with placeholde
 - `{{content}}` - Rendered markdown content
 - `<!-- Populated from frontmatter -->` - Meta info (client, date, version)
 
+Current templates include:
+
+- `answerlayer-sow.html` - Original branded proposal/SOW template
+- `answerlayer-sow-readable.html` - Same branded styling with serif headings and sans-serif body text
+- `answerlayer-legal.html` - Legal/document-heavy template
+
 ### Frontmatter
 
 Markdown files can include YAML frontmatter:
@@ -62,6 +69,7 @@ version: 1.0
 | `/save?file=PATH` | POST | Save file content |
 | `/preview-html?file=PATH` | GET | Serve HTML file for preview |
 | `/render-markdown?template=NAME` | POST | Render markdown through template |
+| `/estimate-pdf-pages?template=NAME` | POST | Estimate PDF page count for markdown |
 | `/templates` | GET | List available templates |
 | `/generate-pdf?html=PATH&pdf=PATH` | POST | Generate PDF from HTML |
 | `/generate-pdf-from-markdown?file=PATH&pdf=PATH&template=NAME` | POST | Generate PDF from markdown |

@@ -5,6 +5,7 @@ import json
 import subprocess
 import re
 import tempfile
+import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -247,6 +248,85 @@ def render_template(template_name, markdown_content):
 
     return html, None
 
+def generate_pdf_from_html(html_path, pdf_path):
+    """Render a PDF from an HTML file with headless Chrome."""
+    subprocess.run([
+        CHROME_PATH,
+        "--headless=new",
+        "--disable-gpu",
+        f"--print-to-pdf={pdf_path}",
+        "--no-pdf-header-footer",
+        "--no-margins",
+        html_path
+    ], capture_output=True, text=True, timeout=30)
+
+def get_pdf_page_count(pdf_path):
+    """Read PDF page count through Spotlight metadata, with a raw PDF fallback."""
+    result = subprocess.run([
+        "/usr/bin/mdls",
+        "-raw",
+        "-name",
+        "kMDItemNumberOfPages",
+        pdf_path
+    ], capture_output=True, text=True, timeout=10)
+
+    value = result.stdout.strip()
+    if value.isdigit():
+        return int(value)
+
+    with open(pdf_path, 'rb') as f:
+        pdf_bytes = f.read()
+
+    # Fallback for non-indexed files such as temp PDFs in /tmp.
+    page_matches = re.findall(rb'/Type\s*/Page\b', pdf_bytes)
+    if page_matches:
+        return len(page_matches)
+
+    raise ValueError(f"Unable to determine page count for {pdf_path}: {value or result.stderr.strip()}")
+
+def render_markdown_to_temp_html(template_name, markdown_content):
+    """Render markdown through a template into a temporary HTML file."""
+    html, error = render_template(template_name, markdown_content)
+    if error:
+        return None, error
+
+    temp_html = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False)
+    temp_html.write(html)
+    temp_html.close()
+    return temp_html.name, None
+
+def estimate_pdf_pages(template_name, markdown_content):
+    """Estimate PDF page count by rendering the templated markdown to a temporary PDF."""
+    temp_html_path, error = render_markdown_to_temp_html(template_name, markdown_content)
+    if error:
+        return None, error
+
+    temp_pdf = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    temp_pdf.close()
+
+    try:
+        generate_pdf_from_html(temp_html_path, temp_pdf.name)
+
+        # Spotlight metadata can lag slightly after file creation.
+        last_error = None
+        for _ in range(10):
+            try:
+                return get_pdf_page_count(temp_pdf.name), None
+            except Exception as exc:
+                last_error = exc
+                time.sleep(0.1)
+
+        return None, str(last_error or 'Unable to determine PDF page count')
+    except subprocess.TimeoutExpired:
+        return None, 'PDF estimation timed out'
+    except Exception as exc:
+        return None, str(exc)
+    finally:
+        if os.path.exists(temp_html_path):
+            os.unlink(temp_html_path)
+        if os.path.exists(temp_pdf.name):
+            os.unlink(temp_pdf.name)
+
 class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -357,22 +437,15 @@ class Handler(SimpleHTTPRequestHandler):
                 return
 
             try:
-                result = subprocess.run([
-                    CHROME_PATH,
-                    "--headless=new",
-                    "--disable-gpu",
-                    f"--print-to-pdf={pdf_path}",
-                    "--no-pdf-header-footer",
-                    "--no-margins",
-                    html_path
-                ], capture_output=True, text=True, timeout=30)
+                generate_pdf_from_html(html_path, pdf_path)
 
                 if os.path.exists(pdf_path):
                     size = os.path.getsize(pdf_path)
+                    page_count = get_pdf_page_count(pdf_path)
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
-                    response = json.dumps({'success': True, 'path': pdf_path, 'size': size})
+                    response = json.dumps({'success': True, 'path': pdf_path, 'size': size, 'pageCount': page_count})
                     self.wfile.write(response.encode('utf-8'))
                     print(f'Generated PDF: {pdf_path} ({size} bytes)')
                 else:
@@ -411,6 +484,36 @@ class Handler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(b'No content provided')
 
+        elif parsed.path == '/estimate-pdf-pages':
+            params = parse_qs(parsed.query)
+            template = params.get('template', ['answerlayer-sow.html'])[0]
+
+            length = int(self.headers.get('Content-Length', 0))
+            if length > 0:
+                markdown_content = self.rfile.read(length).decode('utf-8')
+            else:
+                md_path = params.get('file', [None])[0]
+                if md_path and os.path.exists(md_path):
+                    with open(md_path, 'r') as f:
+                        markdown_content = f.read()
+                else:
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(b'No content provided')
+                    return
+
+            page_count, error = estimate_pdf_pages(template, markdown_content)
+            if error:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(error.encode('utf-8'))
+            else:
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                response = json.dumps({'success': True, 'pageCount': page_count})
+                self.wfile.write(response.encode('utf-8'))
+
         elif parsed.path == '/generate-pdf-from-markdown':
             # Generate PDF from markdown using a template
             params = parse_qs(parsed.query)
@@ -441,35 +544,23 @@ class Handler(SimpleHTTPRequestHandler):
                 return
 
             # Render through template
-            html, error = render_template(template, markdown_content)
+            temp_html_path, error = render_markdown_to_temp_html(template, markdown_content)
             if error:
                 self.send_response(500)
                 self.end_headers()
                 self.wfile.write(error.encode('utf-8'))
                 return
 
-            # Write to temp HTML file
-            temp_html = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False)
-            temp_html.write(html)
-            temp_html.close()
-
             try:
-                result = subprocess.run([
-                    CHROME_PATH,
-                    "--headless=new",
-                    "--disable-gpu",
-                    f"--print-to-pdf={pdf_path}",
-                    "--no-pdf-header-footer",
-                    "--no-margins",
-                    temp_html.name
-                ], capture_output=True, text=True, timeout=30)
+                generate_pdf_from_html(temp_html_path, pdf_path)
 
                 if os.path.exists(pdf_path):
                     size = os.path.getsize(pdf_path)
+                    page_count = get_pdf_page_count(pdf_path)
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
-                    response = json.dumps({'success': True, 'path': pdf_path, 'size': size})
+                    response = json.dumps({'success': True, 'path': pdf_path, 'size': size, 'pageCount': page_count})
                     self.wfile.write(response.encode('utf-8'))
                     print(f'Generated PDF from markdown: {pdf_path} ({size} bytes)')
                 else:
@@ -485,7 +576,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(str(e).encode('utf-8'))
             finally:
-                os.unlink(temp_html.name)
+                os.unlink(temp_html_path)
 
         elif parsed.path == '/generate-png':
             params = parse_qs(parsed.query)
