@@ -1,5 +1,6 @@
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
+from html import escape
 import os
 import json
 import subprocess
@@ -9,7 +10,7 @@ import time
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-PANDOC_PATH = "/usr/local/bin/pandoc"
+PANDOC_PATH = "/opt/homebrew/bin/pandoc"
 TEMPLATES_DIR = os.path.join(SCRIPT_DIR, "templates")
 
 def parse_frontmatter(content):
@@ -32,7 +33,10 @@ def parse_frontmatter(content):
 
 def markdown_to_html(md):
     """Convert markdown to HTML (basic conversion)."""
-    html = md
+    html, block_placeholders = extract_fenced_code_blocks(md)
+
+    # Inline code should be protected before emphasis conversion.
+    html = re.sub(r'`([^`\n]+)`', lambda m: f'<code>{escape(m.group(1))}</code>', html)
 
     # Headers
     html = re.sub(r'^### (.+)$', r'<h3>\1</h3>', html, flags=re.MULTILINE)
@@ -79,8 +83,30 @@ def markdown_to_html(md):
 
     # Paragraphs - wrap remaining text blocks
     html = wrap_paragraphs(html)
+    html = restore_placeholders(html, block_placeholders)
 
     return html
+
+def extract_fenced_code_blocks(text):
+    """Replace fenced code blocks with placeholders until paragraph wrapping is done."""
+    placeholders = {}
+
+    def replace(match):
+        key = f'@@BLOCKCODE{len(placeholders)}@@'
+        language = match.group(1).strip().split()[0] if match.group(1).strip() else ''
+        language_attr = f' class="language-{escape(language)}"' if language else ''
+        code_html = f'<pre><code{language_attr}>{escape(match.group(2))}</code></pre>'
+        placeholders[key] = code_html
+        return key
+
+    pattern = re.compile(r'^```([^\n`]*)\n(.*?)\n```[ \t]*$', flags=re.MULTILINE | re.DOTALL)
+    return pattern.sub(replace, text), placeholders
+
+def restore_placeholders(text, placeholders):
+    """Restore placeholder HTML after markdown block processing."""
+    for placeholder, html in placeholders.items():
+        text = text.replace(placeholder, html)
+    return text
 
 def convert_tables(html):
     """Convert markdown tables to HTML."""
@@ -174,6 +200,8 @@ def wrap_paragraphs(html):
 
     def is_block_element(line):
         s = line.strip().lower()
+        if s.startswith('@@blockcode'):
+            return True
         if not s.startswith('<'):
             return False
         # Check if it starts with a block tag
