@@ -42,7 +42,6 @@ Templates live in the `templates/` directory. They're HTML files with placeholde
 
 Current templates include:
 
-- `answerlayer-sow.html` - Original branded proposal/SOW template
 - `answerlayer-sow-readable.html` - Same branded styling with serif headings and sans-serif body text
 - `answerlayer-legal.html` - Legal/document-heavy template
 - `midas-branded.html` - Midas Labs-inspired template based on the current `midaslabs.ca` visual system

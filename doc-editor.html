@@ -106,7 +106,7 @@
     const fileDir = filePath ? filePath.substring(0, filePath.lastIndexOf('/') + 1) : '';
     const defaultBasename = filePath ? filePath.split('/').pop().replace(/\.(html|md)$/i, '') : 'output';
     const outputBasenameInput = document.getElementById('outputBasename');
-    const defaultPdfTemplate = explicitTemplateName || 'answerlayer-sow.html';
+    const defaultPdfTemplate = explicitTemplateName || 'midas-branded.html';
     let estimateTimeout = null;
     let estimateRequestId = 0;
 
@@ -175,8 +175,8 @@
           if (templates.includes(defaultPdfTemplate)) {
             templateSelect.value = defaultPdfTemplate;
           } else if (templates.length > 0) {
-            templateSelect.value = templates.includes('answerlayer-sow.html')
-              ? 'answerlayer-sow.html'
+            templateSelect.value = templates.includes('midas-branded.html')
+              ? 'midas-branded.html'
               : templates[0];
           }
 

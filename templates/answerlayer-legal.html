@@ -113,12 +113,34 @@
       padding-left: 24px;
     }
 
+    li > ul,
+    li > ol {
+      margin-top: 8px;
+      margin-bottom: 0;
+      padding-left: 22px;
+    }
+
     li {
       font-size: 11pt;
       margin-bottom: 6px;
       line-height: 1.6;
       orphans: 3;
       widows: 3;
+    }
+
+    ol li[data-marker] {
+      list-style: none;
+      position: relative;
+      padding-left: 2.4em;
+    }
+
+    ol li[data-marker]::before {
+      content: attr(data-marker);
+      position: absolute;
+      left: 0;
+      top: 0;
+      font-weight: 600;
+      color: var(--navy-700);
     }
 
     /* Tables */

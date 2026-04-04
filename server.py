@@ -169,43 +169,78 @@ def convert_tables(html):
     return '\n'.join(result)
 
 def convert_lists(html):
-    """Convert markdown lists to HTML."""
+    """Convert markdown lists to HTML, preserving nested indentation."""
     lines = html.split('\n')
     result = []
-    in_list = False
-    list_type = None
+    list_stack = []
+
+    def close_lists(min_indent=-1):
+        while list_stack and list_stack[-1]['indent'] >= min_indent:
+            current = list_stack.pop()
+            if current['li_open']:
+                result.append('</li>')
+            result.append(f"</{current['type']}>")
+
+    def ensure_list(indent, list_type):
+        if not list_stack:
+            result.append(f'<{list_type}>')
+            list_stack.append({'indent': indent, 'type': list_type, 'li_open': False})
+            return
+
+        current = list_stack[-1]
+        if indent > current['indent']:
+            if current['li_open']:
+                result.append(f'<{list_type}>')
+                list_stack.append({'indent': indent, 'type': list_type, 'li_open': False})
+            else:
+                result.append(f'<{list_type}>')
+                list_stack.append({'indent': indent, 'type': list_type, 'li_open': False})
+            return
+
+        while list_stack and indent < list_stack[-1]['indent']:
+            current = list_stack.pop()
+            if current['li_open']:
+                result.append('</li>')
+            result.append(f"</{current['type']}>")
+
+        if not list_stack:
+            result.append(f'<{list_type}>')
+            list_stack.append({'indent': indent, 'type': list_type, 'li_open': False})
+            return
+
+        current = list_stack[-1]
+        if current['type'] != list_type:
+            if current['li_open']:
+                result.append('</li>')
+            result.append(f"</{current['type']}>")
+            list_stack.pop()
+            result.append(f'<{list_type}>')
+            list_stack.append({'indent': indent, 'type': list_type, 'li_open': False})
 
     for line in lines:
-        # Unordered list
-        ul_match = re.match(r'^[\-\*] (.+)$', line.strip())
-        # Ordered list
-        ol_match = re.match(r'^\d+\. (.+)$', line.strip())
+        list_match = re.match(r'^(\s*)([-*]|\d+(?:\.\d+)*\.?) (.+)$', line)
 
-        if ul_match:
-            if not in_list or list_type != 'ul':
-                if in_list:
-                    result.append(f'</{list_type}>')
-                result.append('<ul>')
-                in_list = True
-                list_type = 'ul'
-            result.append(f'<li>{ul_match.group(1)}</li>')
-        elif ol_match:
-            if not in_list or list_type != 'ol':
-                if in_list:
-                    result.append(f'</{list_type}>')
-                result.append('<ol>')
-                in_list = True
-                list_type = 'ol'
-            result.append(f'<li>{ol_match.group(1)}</li>')
+        if list_match:
+            indent = len(list_match.group(1).replace('\t', '    '))
+            marker = list_match.group(2)
+            list_type = 'ul' if marker in ('-', '*') else 'ol'
+            content = list_match.group(3)
+
+            ensure_list(indent, list_type)
+
+            current = list_stack[-1]
+            if current['li_open']:
+                result.append('</li>')
+            marker_attr = f' data-marker="{escape(marker)}"' if list_type == 'ol' else ''
+            result.append(f'<li{marker_attr}>{content}')
+            current['li_open'] = True
         else:
-            if in_list and line.strip() == '':
-                result.append(f'</{list_type}>')
-                in_list = False
-                list_type = None
+            if list_stack:
+                close_lists(0)
             result.append(line)
 
-    if in_list:
-        result.append(f'</{list_type}>')
+    if list_stack:
+        close_lists(0)
 
     return '\n'.join(result)
 
@@ -541,7 +576,7 @@ class Handler(SimpleHTTPRequestHandler):
 
         elif parsed.path == '/estimate-pdf-pages':
             params = parse_qs(parsed.query)
-            template = params.get('template', ['answerlayer-sow.html'])[0]
+            template = params.get('template', ['midas-branded.html'])[0]
 
             length = int(self.headers.get('Content-Length', 0))
             if length > 0:
