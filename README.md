@@ -38,7 +38,7 @@ Templates live in the `templates/` directory. They're HTML files with placeholde
 
 - `{{title}}` - Document title from frontmatter
 - `{{content}}` - Rendered markdown content
-- `<!-- Populated from frontmatter -->` - Meta info (client, date, version)
+- `<!-- Populated from frontmatter -->` - Meta info (`prepared for`, `status`, `date`, `version`)
 
 Current templates include:
 
@@ -53,13 +53,16 @@ Markdown files can include YAML frontmatter:
 ```markdown
 ---
 title: Project Proposal
-client: Acme Corp
+prepared for: Acme Corp
+status: Draft
 date: 2026-03-18
 version: 1.0
 ---
 
 # Document content here...
 ```
+
+`client` still works as a backward-compatible alias for `prepared for`.
 
 ## API Endpoints
 

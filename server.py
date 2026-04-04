@@ -248,12 +248,16 @@ def render_template(template_name, markdown_content):
     # Convert markdown to HTML
     content_html = markdown_to_html(body)
 
+    prepared_for = frontmatter.get('prepared for') or frontmatter.get('client')
+
     # Build meta section
     meta_html = ''
-    if frontmatter.get('client'):
-        meta_html += f"<strong>Prepared for:</strong> {frontmatter['client']}<br>"
+    if prepared_for:
+        meta_html += f"<strong>Prepared for:</strong> {prepared_for}<br>"
     if frontmatter.get('date'):
         meta_html += f"<strong>Date:</strong> {frontmatter['date']}<br>"
+    if frontmatter.get('status'):
+        meta_html += f"<strong>Status:</strong> {frontmatter['status']}<br>"
     if frontmatter.get('version'):
         meta_html += f"<strong>Version:</strong> {frontmatter['version']}"
 
@@ -267,10 +271,12 @@ def render_template(template_name, markdown_content):
 
     # Footer meta
     footer_parts = []
-    if frontmatter.get('client'):
-        footer_parts.append(f"Prepared for {frontmatter['client']}")
+    if prepared_for:
+        footer_parts.append(f"Prepared for {prepared_for}")
     if frontmatter.get('date'):
         footer_parts.append(frontmatter['date'])
+    if frontmatter.get('status'):
+        footer_parts.append(frontmatter['status'])
     footer_meta = ' · '.join(footer_parts)
     html = re.sub(r'<span id="footer-meta"></span>', f'<span id="footer-meta">{footer_meta}</span>', html)
 
