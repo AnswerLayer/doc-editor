@@ -90,18 +90,23 @@
     const params = new URLSearchParams(window.location.search);
     const filePath = params.get('file');
     const templateParam = params.get('template');
+    const templateFlagValues = new Set(['', 'true', '1', 'yes']);
+    const explicitTemplateName = (
+      templateParam &&
+      !templateFlagValues.has(templateParam.toLowerCase())
+    ) ? (templateParam.toLowerCase().endsWith('.html') ? templateParam : `${templateParam}.html`) : null;
     const fileName = filePath ? filePath.split('/').pop() : 'document';
 
     // Determine mode
     const isHtmlMode = filePath && filePath.toLowerCase().endsWith('.html');
-    const isTemplateMode = templateParam || (filePath && filePath.toLowerCase().endsWith('.md') && params.has('template'));
+    const isTemplateMode = filePath && filePath.toLowerCase().endsWith('.md') && params.has('template');
     const isMarkdownMode = filePath && filePath.toLowerCase().endsWith('.md') && !isTemplateMode;
 
     // Output paths - derived from basename input
     const fileDir = filePath ? filePath.substring(0, filePath.lastIndexOf('/') + 1) : '';
     const defaultBasename = filePath ? filePath.split('/').pop().replace(/\.(html|md)$/i, '') : 'output';
     const outputBasenameInput = document.getElementById('outputBasename');
-    const defaultPdfTemplate = templateParam || 'answerlayer-sow.html';
+    const defaultPdfTemplate = explicitTemplateName || 'answerlayer-sow.html';
     let estimateTimeout = null;
     let estimateRequestId = 0;
 
@@ -156,15 +161,27 @@
       fetch('/templates')
         .then(r => r.json())
         .then(templates => {
+          templateSelect.innerHTML = '';
           templates.forEach(t => {
             const opt = document.createElement('option');
             opt.value = t;
             opt.textContent = t.replace('.html', '');
-            if (t === (templateParam || 'answerlayer-branded.html')) {
+            if (t === defaultPdfTemplate) {
               opt.selected = true;
             }
             templateSelect.appendChild(opt);
           });
+
+          if (templates.includes(defaultPdfTemplate)) {
+            templateSelect.value = defaultPdfTemplate;
+          } else if (templates.length > 0) {
+            templateSelect.value = templates.includes('answerlayer-sow.html')
+              ? 'answerlayer-sow.html'
+              : templates[0];
+          }
+
+          updatePreview();
+          schedulePdfEstimate();
         });
     }
 
