@@ -7,6 +7,7 @@ import subprocess
 import re
 import tempfile
 import time
+import unicodedata
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -34,14 +35,15 @@ def parse_frontmatter(content):
 def markdown_to_html(md):
     """Convert markdown to HTML (basic conversion)."""
     html, block_placeholders = extract_fenced_code_blocks(md)
+    slug_counts = {}
 
     # Inline code should be protected before emphasis conversion.
     html = re.sub(r'`([^`\n]+)`', lambda m: f'<code>{escape(m.group(1))}</code>', html)
 
     # Headers
-    html = re.sub(r'^### (.+)$', r'<h3>\1</h3>', html, flags=re.MULTILINE)
-    html = re.sub(r'^## (.+)$', r'<h2>\1</h2>', html, flags=re.MULTILINE)
-    html = re.sub(r'^# (.+)$', r'<h1>\1</h1>', html, flags=re.MULTILINE)
+    html = re.sub(r'^### (.+)$', lambda m: render_heading(3, m.group(1), slug_counts), html, flags=re.MULTILINE)
+    html = re.sub(r'^## (.+)$', lambda m: render_heading(2, m.group(1), slug_counts), html, flags=re.MULTILINE)
+    html = re.sub(r'^# (.+)$', lambda m: render_heading(1, m.group(1), slug_counts), html, flags=re.MULTILINE)
 
     # Links - must be done before bold/italic to avoid conflicts
     # Handle markdown links [text](url) - URL can contain special chars like ? # & =
@@ -107,6 +109,25 @@ def restore_placeholders(text, placeholders):
     for placeholder, html in placeholders.items():
         text = text.replace(placeholder, html)
     return text
+
+def slugify_heading(text):
+    """Generate a stable anchor slug similar to markdown heading IDs."""
+    normalized = unicodedata.normalize('NFKD', text)
+    ascii_text = normalized.encode('ascii', 'ignore').decode('ascii')
+    slug = ascii_text.lower()
+    slug = re.sub(r'<[^>]+>', '', slug)
+    slug = re.sub(r'[`*_~\[\]()]+', '', slug)
+    slug = re.sub(r'[^a-z0-9\s-]', '', slug)
+    slug = re.sub(r'[\s-]+', '-', slug).strip('-')
+    return slug or 'section'
+
+def render_heading(level, text, slug_counts):
+    """Render a heading tag with a deterministic ID for TOC anchors."""
+    base_slug = slugify_heading(text)
+    count = slug_counts.get(base_slug, 0)
+    slug_counts[base_slug] = count + 1
+    slug = base_slug if count == 0 else f'{base_slug}-{count}'
+    return f'<h{level} id="{slug}">{text}</h{level}>'
 
 def convert_tables(html):
     """Convert markdown tables to HTML."""
