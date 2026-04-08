@@ -1,5 +1,6 @@
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
+from urllib import request as urlrequest, error as urlerror
 from html import escape
 import os
 import json
@@ -8,11 +9,15 @@ import re
 import tempfile
 import time
 import unicodedata
+import shutil
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 PANDOC_PATH = "/opt/homebrew/bin/pandoc"
 TEMPLATES_DIR = os.path.join(SCRIPT_DIR, "templates")
+DEFAULT_AI_BASE_URL = os.getenv("DOC_EDITOR_AI_BASE_URL") or os.getenv("RLMKIT_BASE_URL") or "http://127.0.0.1:8082/v1"
+DEFAULT_AI_API_KEY = os.getenv("DOC_EDITOR_AI_API_KEY") or os.getenv("RLMKIT_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+DEFAULT_AI_MODEL = os.getenv("DOC_EDITOR_AI_MODEL") or os.getenv("DOC_EDITOR_MODEL") or ""
 
 def parse_frontmatter(content):
     """Extract YAML frontmatter and body from markdown."""
@@ -417,6 +422,262 @@ def estimate_pdf_pages(template_name, markdown_content):
         if os.path.exists(temp_pdf.name):
             os.unlink(temp_pdf.name)
 
+def read_json_body(handler):
+    """Read a JSON request body from the HTTP handler."""
+    length = int(handler.headers.get('Content-Length', 0))
+    if length <= 0:
+        raise ValueError('No request body provided')
+    body = handler.rfile.read(length).decode('utf-8')
+    return json.loads(body)
+
+def get_openai_compatible_model(base_url, api_key):
+    """Resolve a model name from an OpenAI-compatible /models endpoint."""
+    return get_openai_compatible_models(base_url, api_key)[0]
+
+def get_openai_compatible_models(base_url, api_key):
+    """Fetch model ids from an OpenAI-compatible /models endpoint."""
+    models_url = base_url.rstrip('/') + '/models'
+    req = urlrequest.Request(models_url, method='GET')
+    if api_key:
+        req.add_header('Authorization', f'Bearer {api_key}')
+
+    with urlrequest.urlopen(req, timeout=10) as response:
+        payload = json.loads(response.read().decode('utf-8'))
+
+    data = payload.get('data')
+    if not isinstance(data, list) or not data:
+        raise ValueError('No models returned by AI endpoint')
+
+    model_ids = [item.get('id') for item in data if isinstance(item, dict) and item.get('id')]
+    if not model_ids:
+        raise ValueError('Model list did not include an id')
+    return model_ids
+
+def normalize_model_output(content):
+    """Normalize chat completion content to a plain string."""
+    if isinstance(content, str):
+        return content.strip()
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get('text')
+                if text:
+                    parts.append(text)
+        return ''.join(parts).strip()
+
+    return str(content).strip()
+
+def build_comment_edit_prompt(full_text, selected_text, comment, file_path=None):
+    """Build a prompt for rewriting selected text according to an editor comment."""
+    return (
+        "You are editing a document. Rewrite only the selected text so it addresses the editor comment.\n"
+        "Preserve surrounding document consistency, formatting style, and markdown conventions when relevant.\n"
+        "Return only the replacement text, with no explanation, no code fences, and no quotation marks around it.\n\n"
+        f"File path: {file_path or 'unknown'}\n\n"
+        f"Editor comment:\n{comment}\n\n"
+        f"Selected text to rewrite:\n<<<SELECTED>>>\n{selected_text}\n<<<END_SELECTED>>>\n\n"
+        f"Full document for context:\n<<<DOCUMENT>>>\n{full_text}\n<<<END_DOCUMENT>>>"
+    )
+
+def run_claude_subscription_edit(prompt, model=None):
+    """Use Claude Code CLI with claude.ai subscription auth."""
+    env = os.environ.copy()
+    env.pop('ANTHROPIC_API_KEY', None)
+    command = ['claude', '-p']
+    if model:
+        command.extend(['--model', model])
+    command.append(prompt)
+
+    result = subprocess.run(command, capture_output=True, text=True, timeout=180, env=env)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or 'Claude CLI failed')
+    output = result.stdout.strip()
+    if not output:
+        raise RuntimeError('Claude CLI returned empty output')
+    return output
+
+def run_codex_subscription_edit(prompt, model=None):
+    """Use Codex CLI with ChatGPT login auth."""
+    env = os.environ.copy()
+    env.pop('OPENAI_API_KEY', None)
+    temp_output = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
+    temp_output.close()
+
+    command = [
+        'codex', 'exec',
+        '--skip-git-repo-check',
+        '-C', SCRIPT_DIR,
+        '--color', 'never',
+        '-o', temp_output.name,
+    ]
+    if model:
+        command.extend(['--model', model])
+    command.append(prompt)
+
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=240, env=env)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or result.stdout.strip() or 'Codex CLI failed')
+        with open(temp_output.name, 'r') as f:
+            output = f.read().strip()
+        if not output:
+            raise RuntimeError('Codex CLI returned empty output')
+        return output
+    finally:
+        if os.path.exists(temp_output.name):
+            os.unlink(temp_output.name)
+
+def run_openai_compatible_edit(prompt, model=None):
+    """Use an OpenAI-compatible endpoint such as the local MLX server."""
+    base_url = DEFAULT_AI_BASE_URL.rstrip('/')
+    api_key = DEFAULT_AI_API_KEY
+    resolved_model = model or DEFAULT_AI_MODEL or get_openai_compatible_model(base_url, api_key)
+
+    payload = {
+        'model': resolved_model,
+        'temperature': 0.2,
+        'messages': [
+            {
+                'role': 'user',
+                'content': prompt,
+            },
+        ],
+    }
+
+    req = urlrequest.Request(
+        base_url + '/chat/completions',
+        data=json.dumps(payload).encode('utf-8'),
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    if api_key:
+        req.add_header('Authorization', f'Bearer {api_key}')
+
+    try:
+        with urlrequest.urlopen(req, timeout=120) as response:
+            result = json.loads(response.read().decode('utf-8'))
+    except urlerror.HTTPError as exc:
+        detail = exc.read().decode('utf-8', errors='replace')
+        raise RuntimeError(f'AI request failed: {detail or exc.reason}') from exc
+    except urlerror.URLError as exc:
+        raise RuntimeError(f'AI endpoint unavailable at {base_url}: {exc.reason}') from exc
+
+    choices = result.get('choices')
+    if not choices:
+        raise RuntimeError('AI response did not include any choices')
+
+    message = choices[0].get('message') or {}
+    replacement_text = normalize_model_output(message.get('content'))
+    if not replacement_text:
+        raise RuntimeError('AI response was empty')
+
+    return replacement_text
+
+def get_ai_model_catalog():
+    """Return available editor AI providers and models."""
+    providers = []
+
+    claude_path = shutil.which('claude')
+    if claude_path:
+        auth_method = 'unknown'
+        authenticated = False
+        subscription = None
+        try:
+            result = subprocess.run(['claude', 'auth', 'status'], capture_output=True, text=True, timeout=15)
+            if result.returncode == 0:
+                payload = json.loads(result.stdout)
+                authenticated = bool(payload.get('loggedIn'))
+                auth_method = payload.get('authMethod') or auth_method
+                subscription = payload.get('subscriptionType')
+        except Exception:
+            pass
+
+        providers.append({
+            'id': 'claude-code',
+            'label': 'Claude',
+            'kind': 'subscription-cli',
+            'available': authenticated,
+            'detail': f'Claude Code via {auth_method}' + (f' ({subscription})' if subscription else ''),
+            'models': [
+                {'id': '', 'label': 'Default'},
+                {'id': 'sonnet', 'label': 'Sonnet'},
+                {'id': 'opus', 'label': 'Opus'},
+            ],
+        })
+
+    codex_path = shutil.which('codex')
+    if codex_path:
+        authenticated = False
+        detail = 'Codex CLI'
+        try:
+            result = subprocess.run(['codex', 'login', 'status'], capture_output=True, text=True, timeout=15)
+            if result.returncode == 0:
+                combined_output = (result.stdout + result.stderr).strip()
+                authenticated = 'Logged in' in combined_output
+                detail = combined_output or detail
+        except Exception:
+            pass
+
+        providers.append({
+            'id': 'codex',
+            'label': 'Codex',
+            'kind': 'subscription-cli',
+            'available': authenticated,
+            'detail': detail,
+            'models': [
+                {'id': '', 'label': 'Default'},
+                {'id': 'gpt-5.4', 'label': 'GPT-5.4'},
+                {'id': 'gpt-5.4-mini', 'label': 'GPT-5.4 Mini'},
+            ],
+        })
+
+    mlx_models = []
+    mlx_detail = f'OpenAI-compatible endpoint at {DEFAULT_AI_BASE_URL}'
+    mlx_available = False
+    try:
+        mlx_models = get_openai_compatible_models(DEFAULT_AI_BASE_URL.rstrip('/'), DEFAULT_AI_API_KEY)
+        mlx_available = True
+    except Exception as exc:
+        mlx_detail = f'{mlx_detail} ({exc})'
+
+    providers.append({
+        'id': 'mlx',
+        'label': 'Local MLX',
+        'kind': 'openai-compatible',
+        'available': mlx_available,
+        'detail': mlx_detail,
+        'models': [{'id': model_id, 'label': model_id} for model_id in mlx_models],
+    })
+
+    return providers
+
+def address_comment_with_ai(full_text, selection_start, selection_end, selected_text, comment, provider='mlx', model=None, file_path=None):
+    """Rewrite a selected passage according to an editor comment."""
+    span_text = full_text[selection_start:selection_end]
+    if span_text != selected_text:
+        raise ValueError('Selected text no longer matches the document.')
+
+    if not selected_text.strip():
+        raise ValueError('Selected text is empty.')
+
+    prompt = build_comment_edit_prompt(
+        full_text=full_text,
+        selected_text=selected_text,
+        comment=comment,
+        file_path=file_path,
+    )
+
+    if provider == 'claude-code':
+        return run_claude_subscription_edit(prompt, model=model or None)
+    if provider == 'codex':
+        return run_codex_subscription_edit(prompt, model=model or None)
+    if provider == 'mlx':
+        return run_openai_compatible_edit(prompt, model=model or None)
+
+    raise ValueError(f'Unknown AI provider: {provider}')
+
 class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -484,6 +745,13 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps(templates).encode('utf-8'))
+
+        elif parsed.path == '/ai-models':
+            providers = get_ai_model_catalog()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(providers).encode('utf-8'))
 
         else:
             super().do_GET()
@@ -889,6 +1157,48 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_response(500)
                 self.end_headers()
                 self.wfile.write(str(e).encode('utf-8'))
+
+        elif parsed.path == '/ai-address-comment':
+            try:
+                payload = read_json_body(self)
+                full_text = payload.get('fullText')
+                selection_start = payload.get('selectionStart')
+                selection_end = payload.get('selectionEnd')
+                selected_text = payload.get('selectedText')
+                comment = payload.get('comment')
+                file_path = payload.get('filePath')
+                provider = payload.get('provider') or 'mlx'
+                model = payload.get('model') or None
+
+                if not isinstance(full_text, str) or not isinstance(selected_text, str) or not isinstance(comment, str):
+                    raise ValueError('Invalid request payload')
+                if not isinstance(selection_start, int) or not isinstance(selection_end, int):
+                    raise ValueError('Selection offsets must be integers')
+                if selection_start < 0 or selection_end <= selection_start or selection_end > len(full_text):
+                    raise ValueError('Selection offsets are out of range')
+
+                replacement_text = address_comment_with_ai(
+                    full_text=full_text,
+                    selection_start=selection_start,
+                    selection_end=selection_end,
+                    selected_text=selected_text,
+                    comment=comment,
+                    provider=provider,
+                    model=model,
+                    file_path=file_path,
+                )
+
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                response = json.dumps({'success': True, 'replacementText': replacement_text, 'provider': provider, 'model': model})
+                self.wfile.write(response.encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                response = json.dumps({'success': False, 'error': str(e)})
+                self.wfile.write(response.encode('utf-8'))
 
         else:
             self.send_response(404)
