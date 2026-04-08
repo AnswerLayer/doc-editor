@@ -48,6 +48,7 @@ def markdown_to_html(md):
     html = re.sub(r'`([^`\n]+)`', lambda m: f'<code>{escape(m.group(1))}</code>', html)
 
     # Headers
+    html = re.sub(r'^#### (.+)$', lambda m: render_heading(4, m.group(1), slug_counts), html, flags=re.MULTILINE)
     html = re.sub(r'^### (.+)$', lambda m: render_heading(3, m.group(1), slug_counts), html, flags=re.MULTILINE)
     html = re.sub(r'^## (.+)$', lambda m: render_heading(2, m.group(1), slug_counts), html, flags=re.MULTILINE)
     html = re.sub(r'^# (.+)$', lambda m: render_heading(1, m.group(1), slug_counts), html, flags=re.MULTILINE)
