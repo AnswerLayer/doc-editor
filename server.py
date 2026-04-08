@@ -10,11 +10,13 @@ import tempfile
 import time
 import unicodedata
 import shutil
+import hashlib
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 PANDOC_PATH = "/opt/homebrew/bin/pandoc"
 TEMPLATES_DIR = os.path.join(SCRIPT_DIR, "templates")
+COMMENTS_DIR = os.path.join(SCRIPT_DIR, "comment_data")
 DEFAULT_AI_BASE_URL = os.getenv("DOC_EDITOR_AI_BASE_URL") or os.getenv("RLMKIT_BASE_URL") or "http://127.0.0.1:8082/v1"
 DEFAULT_AI_API_KEY = os.getenv("DOC_EDITOR_AI_API_KEY") or os.getenv("RLMKIT_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
 DEFAULT_AI_MODEL = os.getenv("DOC_EDITOR_AI_MODEL") or os.getenv("DOC_EDITOR_MODEL") or ""
@@ -430,6 +432,97 @@ def read_json_body(handler):
     body = handler.rfile.read(length).decode('utf-8')
     return json.loads(body)
 
+def sanitize_comment_records(raw_comments):
+    """Normalize a comment list to the fields the editor supports."""
+    if not isinstance(raw_comments, list):
+        raise ValueError('Comments payload must be an array')
+
+    comments = []
+    for item in raw_comments:
+        if not isinstance(item, dict):
+            continue
+
+        comment_id = item.get('id')
+        comment_text = item.get('comment')
+        start = item.get('start')
+        end = item.get('end')
+
+        if not isinstance(comment_id, str) or not isinstance(comment_text, str):
+            continue
+        if not isinstance(start, int) or not isinstance(end, int):
+            continue
+        if start < 0 or end <= start:
+            continue
+
+        comments.append({
+            'id': comment_id,
+            'start': start,
+            'end': end,
+            'excerpt': item.get('excerpt') if isinstance(item.get('excerpt'), str) else '',
+            'comment': comment_text,
+            'createdAt': item.get('createdAt') if isinstance(item.get('createdAt'), str) else '',
+        })
+
+    comments.sort(key=lambda item: item.get('createdAt') or '', reverse=True)
+    return comments
+
+def get_comment_store_path(file_path):
+    """Build a stable sidecar JSON path for a source document."""
+    if not isinstance(file_path, str) or not file_path.strip():
+        raise ValueError('A file path is required to persist comments')
+
+    normalized_path = os.path.abspath(file_path)
+    digest = hashlib.sha256(normalized_path.encode('utf-8')).hexdigest()[:12]
+    basename = os.path.basename(normalized_path)
+    stem, _ = os.path.splitext(basename)
+    safe_stem = re.sub(r'[^A-Za-z0-9._-]+', '-', stem).strip('-') or 'document'
+    os.makedirs(COMMENTS_DIR, exist_ok=True)
+    return os.path.join(COMMENTS_DIR, f'{safe_stem}-{digest}.comments.json')
+
+def load_comment_store(file_path):
+    """Load the persisted comment sidecar for a document."""
+    comments_path = get_comment_store_path(file_path)
+    if not os.path.exists(comments_path):
+        return {
+            'version': 1,
+            'sourceFile': os.path.abspath(file_path),
+            'commentsPath': comments_path,
+            'updatedAt': None,
+            'comments': [],
+        }
+
+    with open(comments_path, 'r') as f:
+        payload = json.load(f)
+
+    comments = sanitize_comment_records(payload.get('comments', []))
+    return {
+        'version': 1,
+        'sourceFile': payload.get('sourceFile') or os.path.abspath(file_path),
+        'commentsPath': comments_path,
+        'updatedAt': payload.get('updatedAt'),
+        'comments': comments,
+    }
+
+def save_comment_store(file_path, comments):
+    """Persist comments for a document to a sidecar JSON file."""
+    normalized_path = os.path.abspath(file_path)
+    comments_path = get_comment_store_path(normalized_path)
+    payload = {
+        'version': 1,
+        'sourceFile': normalized_path,
+        'updatedAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        'comments': sanitize_comment_records(comments),
+    }
+
+    temp_path = comments_path + '.tmp'
+    with open(temp_path, 'w') as f:
+        json.dump(payload, f, indent=2)
+        f.write('\n')
+    os.replace(temp_path, comments_path)
+
+    payload['commentsPath'] = comments_path
+    return payload
+
 def get_openai_compatible_model(base_url, api_key):
     """Resolve a model name from an OpenAI-compatible /models endpoint."""
     return get_openai_compatible_models(base_url, api_key)[0]
@@ -752,6 +845,25 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps(providers).encode('utf-8'))
+
+        elif parsed.path == '/comments':
+            params = parse_qs(parsed.query)
+            filepath = params.get('file', [None])[0]
+
+            try:
+                if not filepath:
+                    raise ValueError('Missing file parameter')
+
+                payload = load_comment_store(filepath)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'success': True, **payload}).encode('utf-8'))
+            except Exception as exc:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'success': False, 'error': str(exc)}).encode('utf-8'))
 
         else:
             super().do_GET()
@@ -1199,6 +1311,25 @@ class Handler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 response = json.dumps({'success': False, 'error': str(e)})
                 self.wfile.write(response.encode('utf-8'))
+
+        elif parsed.path == '/comments':
+            try:
+                payload = read_json_body(self)
+                file_path = payload.get('filePath')
+                comments = payload.get('comments')
+                if not isinstance(file_path, str) or not file_path:
+                    raise ValueError('filePath is required')
+
+                saved = save_comment_store(file_path, comments)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'success': True, **saved}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
 
         else:
             self.send_response(404)

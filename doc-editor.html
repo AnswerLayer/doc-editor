@@ -52,9 +52,11 @@
     .comments-list { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
     .comment-item { background: white; border: 1px solid #dbe3ee; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
     .comment-item.active { border-color: #2563eb; box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.15); }
+    .comment-item.stale { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.12); }
     .comment-meta { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
     .comment-meta strong { font-size: 12px; color: #0f172a; }
     .comment-meta span { font-size: 11px; color: #64748b; }
+    .comment-state { font-size: 11px; font-weight: 600; color: #b45309; }
     .comment-quote { padding: 10px 12px; background: #eff6ff; border-radius: 8px; font-size: 12px; line-height: 1.5; color: #1e3a8a; white-space: pre-wrap; }
     .comment-body { font-size: 13px; line-height: 1.5; color: #0f172a; white-space: pre-wrap; }
     .comment-buttons { display: flex; gap: 8px; }
@@ -164,10 +166,12 @@
     const commentStorageKey = `doc-editor-comments:${filePath || 'unsaved'}`;
     let currentSelection = null;
     let lastEditorSelection = null;
-    let comments = loadStoredComments();
+    let comments = [];
     let activeCommentId = comments[0]?.id || null;
     let pendingApplyCommentId = null;
     let aiProviders = [];
+    let commentsLoaded = false;
+    let pendingCommentsSave = null;
 
     function getOutputPath(ext) {
       const basename = outputBasenameInput.value || defaultBasename;
@@ -316,6 +320,7 @@ Usage:
 
 In template mode, edit plain markdown and generate styled PDFs.`;
       updatePreview();
+      bootstrapComments();
     } else {
       fetch('/load?file=' + encodeURIComponent(filePath))
         .then(r => r.ok ? r.text() : Promise.reject('File not found'))
@@ -326,6 +331,7 @@ In template mode, edit plain markdown and generate styled PDFs.`;
           renderComments();
           handleSelectionChange();
           document.title = 'Doc Editor - ' + fileName;
+          bootstrapComments();
         })
         .catch(err => {
           editor.value = '# Error loading file\n\n' + err;
@@ -333,6 +339,7 @@ In template mode, edit plain markdown and generate styled PDFs.`;
           schedulePdfEstimate();
           renderComments();
           handleSelectionChange();
+          bootstrapComments();
         });
     }
 
@@ -663,8 +670,125 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       }
     }
 
-    function persistComments() {
-      localStorage.setItem(commentStorageKey, JSON.stringify(comments));
+    function normalizeComments(rawComments) {
+      if (!Array.isArray(rawComments)) {
+        return [];
+      }
+
+      return rawComments.filter(comment => (
+        comment &&
+        typeof comment.id === 'string' &&
+        typeof comment.comment === 'string' &&
+        Number.isInteger(comment.start) &&
+        Number.isInteger(comment.end)
+      )).map(comment => ({
+        id: comment.id,
+        start: comment.start,
+        end: comment.end,
+        excerpt: typeof comment.excerpt === 'string' ? comment.excerpt : '',
+        comment: comment.comment,
+        createdAt: typeof comment.createdAt === 'string' ? comment.createdAt : ''
+      }));
+    }
+
+    function mergeComments(serverComments, localComments) {
+      const mergedById = new Map();
+
+      [...normalizeComments(serverComments), ...normalizeComments(localComments)].forEach(comment => {
+        const existing = mergedById.get(comment.id);
+        if (!existing || (comment.createdAt || '') > (existing.createdAt || '')) {
+          mergedById.set(comment.id, comment);
+        }
+      });
+
+      return Array.from(mergedById.values()).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    }
+
+    async function bootstrapComments() {
+      const localComments = loadStoredComments();
+
+      if (!filePath) {
+        comments = localComments;
+        activeCommentId = comments[0]?.id || null;
+        commentsLoaded = true;
+        renderComments();
+        handleSelectionChange();
+        return;
+      }
+
+      try {
+        const response = await fetch('/comments?file=' + encodeURIComponent(filePath));
+        const payload = response.ok
+          ? await response.json()
+          : await response.text().then(text => Promise.reject(new Error(text || 'Failed to load comments')));
+
+        comments = mergeComments(payload.comments || [], localComments);
+        activeCommentId = comments[0]?.id || null;
+        commentsLoaded = true;
+        renderComments();
+        handleSelectionChange();
+        persistComments({ silent: true }).then(() => {
+          if (localComments.length) {
+            showStatus('Comments synced to server.');
+          }
+        }).catch(() => {});
+      } catch (error) {
+        comments = localComments;
+        activeCommentId = comments[0]?.id || null;
+        commentsLoaded = true;
+        renderComments();
+        handleSelectionChange();
+        if (comments.length) {
+          showStatus('Comments loaded locally; server sync unavailable.', true);
+        }
+      }
+    }
+
+    function persistComments(options = {}) {
+      const { silent = false } = options;
+      const normalized = normalizeComments(comments);
+      const serialized = JSON.stringify(normalized);
+      localStorage.setItem(commentStorageKey, serialized);
+      comments = normalized;
+
+      if (!filePath || !commentsLoaded) {
+        return Promise.resolve();
+      }
+
+      if (pendingCommentsSave) {
+        return pendingCommentsSave;
+      }
+
+      const requestJson = serialized;
+      pendingCommentsSave = fetch('/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filePath,
+          comments: normalized
+        })
+      })
+        .then(r => r.ok ? r.json() : r.text().then(text => Promise.reject(new Error(text || 'Failed to save comments'))))
+        .then(payload => {
+          if (!payload.success) {
+            throw new Error(payload.error || 'Failed to save comments');
+          }
+          if (!silent) {
+            showStatus(`Comments saved to ${payload.commentsPath}`);
+          }
+        })
+        .catch(error => {
+          showStatus(`Comment sync failed: ${error.message}`, true);
+          throw error;
+        })
+        .finally(() => {
+          pendingCommentsSave = null;
+          if (JSON.stringify(normalizeComments(comments)) !== requestJson) {
+            persistComments({ silent: true }).catch(() => {});
+          }
+        });
+
+      return pendingCommentsSave;
     }
 
     function truncateText(text, maxLength = 180) {
@@ -737,6 +861,18 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       handleSelectionChange();
     }
 
+    function isCommentStale(comment) {
+      if (!comment) {
+        return false;
+      }
+
+      if (comment.start < 0 || comment.end > editor.value.length || comment.start >= comment.end) {
+        return true;
+      }
+
+      return editor.value.slice(comment.start, comment.end) !== comment.excerpt;
+    }
+
     function renderComments() {
       if (!comments.length) {
         commentsList.innerHTML = '<div class="comment-empty">No comments yet.</div>';
@@ -746,20 +882,23 @@ In template mode, edit plain markdown and generate styled PDFs.`;
 
       commentsList.innerHTML = comments.map((comment, index) => {
         const isActive = comment.id === activeCommentId;
+        const stale = isCommentStale(comment);
         const createdAt = comment.createdAt ? new Date(comment.createdAt).toLocaleString() : '';
-        const excerpt = editor.value.slice(comment.start, comment.end) || comment.excerpt || '';
+        const excerpt = stale ? (comment.excerpt || '') : (editor.value.slice(comment.start, comment.end) || comment.excerpt || '');
         const pending = pendingApplyCommentId === comment.id;
         return `
-          <div class="comment-item${isActive ? ' active' : ''}">
+          <div class="comment-item${isActive ? ' active' : ''}${stale ? ' stale' : ''}">
             <div class="comment-meta">
               <strong>Comment ${index + 1}</strong>
               <span>${createdAt}</span>
             </div>
+            ${stale ? '<div class="comment-state">Needs re-anchor after edits</div>' : ''}
             <div class="comment-quote">${escapeHtml(truncateText(excerpt, 220))}</div>
             <div class="comment-body">${escapeHtml(comment.comment)}</div>
             <div class="comment-buttons">
               <button type="button" class="secondary" onclick="focusCommentRange('${comment.id}')">Focus</button>
-              <button type="button" onclick="applyCommentWithAI('${comment.id}')" ${pending ? 'disabled' : ''}>${pending ? 'Applying...' : 'AI Apply'}</button>
+              <button type="button" class="secondary" onclick="resolveComment('${comment.id}')">Resolve</button>
+              <button type="button" onclick="applyCommentWithAI('${comment.id}')" ${(pending || stale) ? 'disabled' : ''}>${pending ? 'Applying...' : 'AI Apply'}</button>
               <button type="button" class="accent" onclick="deleteComment('${comment.id}')">Delete</button>
             </div>
           </div>
@@ -797,7 +936,7 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       currentSelection = selection;
       lastEditorSelection = selection;
       commentInput.value = '';
-      persistComments();
+      persistComments({ silent: true });
       renderComments();
       showStatus('Comment added.');
     }
@@ -805,6 +944,13 @@ In template mode, edit plain markdown and generate styled PDFs.`;
     function focusCommentRange(commentId) {
       const comment = comments.find(item => item.id === commentId);
       if (!comment) {
+        return;
+      }
+
+      if (isCommentStale(comment)) {
+        activeCommentId = commentId;
+        renderComments();
+        showStatus('This comment no longer matches the current text. Re-select the passage and add a fresh comment, or resolve it.', true);
         return;
       }
 
@@ -825,24 +971,23 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       if (activeCommentId === commentId) {
         activeCommentId = comments[0]?.id || null;
       }
-      persistComments();
+      persistComments({ silent: true });
       renderComments();
       showStatus('Comment removed.');
     }
 
-    function syncCommentsAfterEdit() {
-      comments = comments.filter(comment => (
-        comment.start >= 0 &&
-        comment.end <= editor.value.length &&
-        comment.start < comment.end &&
-        editor.value.slice(comment.start, comment.end) === comment.excerpt
-      ));
-
-      if (activeCommentId && !comments.some(comment => comment.id === activeCommentId)) {
+    function resolveComment(commentId) {
+      comments = comments.filter(comment => comment.id !== commentId);
+      if (activeCommentId === commentId) {
         activeCommentId = comments[0]?.id || null;
       }
+      persistComments({ silent: true });
+      renderComments();
+      showStatus('Comment resolved.');
+    }
 
-      persistComments();
+    function syncCommentsAfterEdit() {
+      persistComments({ silent: true });
       renderComments();
     }
 
@@ -880,9 +1025,9 @@ In template mode, edit plain markdown and generate styled PDFs.`;
         return;
       }
 
-      const currentSpan = editor.value.slice(comment.start, comment.end);
-      if (currentSpan !== comment.excerpt) {
+      if (isCommentStale(comment)) {
         showStatus('The text changed. Re-select it and add a fresh comment.', true);
+        renderComments();
         return;
       }
 
@@ -919,7 +1064,7 @@ In template mode, edit plain markdown and generate styled PDFs.`;
 
         comments = comments.filter(item => item.id !== commentId);
         activeCommentId = comments[0]?.id || null;
-        persistComments();
+        persistComments({ silent: true });
         renderComments();
         updatePreview();
         schedulePdfEstimate();
