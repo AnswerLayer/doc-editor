@@ -25,77 +25,311 @@ def parse_frontmatter(content):
     """Extract YAML frontmatter and body from markdown."""
     frontmatter = {}
     body = content
+    body_start = 0
 
     if content.startswith('---'):
-        parts = content.split('---', 2)
-        if len(parts) >= 3:
-            yaml_str = parts[1].strip()
-            body = parts[2].strip()
-            # Simple YAML parsing (key: value)
+        match = re.match(r'^---\s*\n(.*?)\n---\s*\n?', content, flags=re.DOTALL)
+        if match:
+            yaml_str = match.group(1)
+            body_start = match.end()
+            body = content[body_start:]
             for line in yaml_str.split('\n'):
                 if ':' in line:
                     key, val = line.split(':', 1)
                     frontmatter[key.strip()] = val.strip()
 
-    return frontmatter, body
+    return frontmatter, body, body_start
 
-def markdown_to_html(md):
-    """Convert markdown to HTML (basic conversion)."""
-    html, block_placeholders = extract_fenced_code_blocks(md)
-    slug_counts = {}
+def inline_markdown_to_html(text):
+    """Convert a markdown inline string to HTML."""
+    placeholders = {}
 
-    # Inline code should be protected before emphasis conversion.
-    html = re.sub(r'`([^`\n]+)`', lambda m: f'<code>{escape(m.group(1))}</code>', html)
+    def replace_code(match):
+        key = f'@@INLINECODE{len(placeholders)}@@'
+        placeholders[key] = f'<code>{escape(match.group(1))}</code>'
+        return key
 
-    # Headers
-    html = re.sub(r'^#### (.+)$', lambda m: render_heading(4, m.group(1), slug_counts), html, flags=re.MULTILINE)
-    html = re.sub(r'^### (.+)$', lambda m: render_heading(3, m.group(1), slug_counts), html, flags=re.MULTILINE)
-    html = re.sub(r'^## (.+)$', lambda m: render_heading(2, m.group(1), slug_counts), html, flags=re.MULTILINE)
-    html = re.sub(r'^# (.+)$', lambda m: render_heading(1, m.group(1), slug_counts), html, flags=re.MULTILINE)
-
-    # Links - must be done before bold/italic to avoid conflicts
-    # Handle markdown links [text](url) - URL can contain special chars like ? # & =
+    html = re.sub(r'`([^`\n]+)`', replace_code, text)
     html = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html)
-
-    # Bold
     html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
-
-    # Italic
     html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
+    html = re.sub(r'__(.+?)__', r'<strong>\1</strong>', html)
+    html = re.sub(r'(?<!\w)_(.+?)_(?!\w)', r'<em>\1</em>', html)
 
-    # Blockquotes (for highlight boxes)
-    lines = html.split('\n')
-    in_blockquote = False
-    result = []
-    for line in lines:
-        if line.startswith('> '):
-            if not in_blockquote:
-                result.append('<blockquote>')
-                in_blockquote = True
-            result.append('<p>' + line[2:] + '</p>')
-        else:
-            if in_blockquote:
-                result.append('</blockquote>')
-                in_blockquote = False
-            result.append(line)
-    if in_blockquote:
-        result.append('</blockquote>')
-    html = '\n'.join(result)
-
-    # Horizontal rules
-    html = re.sub(r'^---+$', '<hr>', html, flags=re.MULTILINE)
-
-    # Tables
-    html = convert_tables(html)
-
-    # Lists
-    html = convert_lists(html)
-
-    # Paragraphs - wrap remaining text blocks
-    html = wrap_paragraphs(html)
-    html = restore_placeholders(html, block_placeholders)
+    for key, value in placeholders.items():
+        html = html.replace(key, value)
 
     return html
+
+def wrap_source_block(html, start, end, block_type):
+    """Wrap a rendered block with source span metadata."""
+    return (
+        f'<div class="source-block" style="display: contents;" '
+        f'data-source-start="{start}" data-source-end="{end}" data-source-type="{block_type}">{html}</div>'
+    )
+
+def split_markdown_blocks(md, source_offset=0):
+    """Split markdown into coarse source-addressable blocks."""
+    lines = md.splitlines(True)
+    blocks = []
+    position = source_offset
+    index = 0
+
+    def stripped(index_value):
+        return lines[index_value].rstrip('\n')
+
+    while index < len(lines):
+        line = lines[index]
+        line_start = position
+        line_end = position + len(line)
+        bare = stripped(index)
+        trimmed = bare.strip()
+
+        if trimmed == '':
+            position = line_end
+            index += 1
+            continue
+
+        if trimmed.startswith('```'):
+            block_lines = [line]
+            position = line_end
+            index += 1
+            while index < len(lines):
+                next_line = lines[index]
+                block_lines.append(next_line)
+                position += len(next_line)
+                closing = next_line.rstrip('\n').strip()
+                index += 1
+                if closing.startswith('```'):
+                    break
+            raw = ''.join(block_lines)
+            blocks.append({'type': 'code', 'start': line_start, 'end': line_start + len(raw), 'raw': raw})
+            continue
+
+        if re.match(r'^#{1,6}\s+', bare):
+            raw = line
+            blocks.append({'type': 'heading', 'start': line_start, 'end': line_end, 'raw': raw})
+            position = line_end
+            index += 1
+            continue
+
+        if re.match(r'^---+\s*$', trimmed):
+            raw = line
+            blocks.append({'type': 'hr', 'start': line_start, 'end': line_end, 'raw': raw})
+            position = line_end
+            index += 1
+            continue
+
+        if bare.lstrip().startswith('>'):
+            block_lines = [line]
+            position = line_end
+            index += 1
+            while index < len(lines):
+                next_bare = stripped(index)
+                if next_bare.strip() == '' or not next_bare.lstrip().startswith('>'):
+                    break
+                next_line = lines[index]
+                block_lines.append(next_line)
+                position += len(next_line)
+                index += 1
+            raw = ''.join(block_lines)
+            blocks.append({'type': 'blockquote', 'start': line_start, 'end': line_start + len(raw), 'raw': raw})
+            continue
+
+        if bare.strip().startswith('|') and index + 1 < len(lines) and re.match(r'^[\|\s\-:]+$', stripped(index + 1).strip()):
+            block_lines = [line]
+            position = line_end
+            index += 1
+            while index < len(lines):
+                next_bare = stripped(index)
+                if not next_bare.strip().startswith('|'):
+                    break
+                next_line = lines[index]
+                block_lines.append(next_line)
+                position += len(next_line)
+                index += 1
+            raw = ''.join(block_lines)
+            blocks.append({'type': 'table', 'start': line_start, 'end': line_start + len(raw), 'raw': raw})
+            continue
+
+        if re.match(r'^(\s*)([-*]|\d+(?:\.\d+)*\.?)\s+', bare):
+            block_lines = [line]
+            position = line_end
+            index += 1
+            while index < len(lines):
+                next_bare = stripped(index)
+                if next_bare.strip() == '':
+                    break
+                if not re.match(r'^(\s*)([-*]|\d+(?:\.\d+)*\.?)\s+', next_bare):
+                    break
+                next_line = lines[index]
+                block_lines.append(next_line)
+                position += len(next_line)
+                index += 1
+            raw = ''.join(block_lines)
+            blocks.append({'type': 'list', 'start': line_start, 'end': line_start + len(raw), 'raw': raw})
+            continue
+
+        block_lines = [line]
+        position = line_end
+        index += 1
+        while index < len(lines):
+            next_bare = stripped(index)
+            if next_bare.strip() == '':
+                break
+            if re.match(r'^#{1,6}\s+', next_bare) or re.match(r'^---+\s*$', next_bare.strip()) or next_bare.lstrip().startswith('>') or next_bare.strip().startswith('```'):
+                break
+            if next_bare.strip().startswith('|') and index + 1 < len(lines) and re.match(r'^[\|\s\-:]+$', stripped(index + 1).strip()):
+                break
+            if re.match(r'^(\s*)([-*]|\d+(?:\.\d+)*\.?)\s+', next_bare):
+                break
+            next_line = lines[index]
+            block_lines.append(next_line)
+            position += len(next_line)
+            index += 1
+
+        raw = ''.join(block_lines)
+        blocks.append({'type': 'paragraph', 'start': line_start, 'end': line_start + len(raw), 'raw': raw})
+
+    return blocks
+
+def render_code_block(raw):
+    """Render a fenced code block."""
+    lines = raw.splitlines()
+    language = ''
+    if lines:
+        opening = lines[0].strip()
+        language = opening[3:].strip() if opening.startswith('```') else ''
+    code_lines = lines[1:-1] if len(lines) >= 2 and lines[-1].strip().startswith('```') else lines[1:]
+    language_attr = f' class="language-{escape(language)}"' if language else ''
+    return f'<pre><code{language_attr}>{escape("\n".join(code_lines))}</code></pre>'
+
+def render_blockquote_block(raw):
+    """Render a blockquote block."""
+    parts = []
+    for line in raw.splitlines():
+        content = re.sub(r'^\s*>\s?', '', line)
+        parts.append(f'<p>{inline_markdown_to_html(content)}</p>')
+    return '<blockquote>' + ''.join(parts) + '</blockquote>'
+
+def render_table_block(raw):
+    """Render a markdown table block."""
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    if not lines:
+        return ''
+
+    rows = [[inline_markdown_to_html(cell.strip()) for cell in line.strip('|').split('|')] for line in lines]
+    header = rows[0]
+    body_rows = rows[2:] if len(rows) > 1 and re.match(r'^[\|\s\-:]+$', lines[1]) else rows[1:]
+
+    html = ['<table>', '<tr>' + ''.join(f'<th>{cell}</th>' for cell in header) + '</tr>']
+    html.extend('<tr>' + ''.join(f'<td>{cell}</td>' for cell in row) + '</tr>' for row in body_rows)
+    html.append('</table>')
+    return ''.join(html)
+
+def render_list_block(raw):
+    """Render a markdown list block."""
+    lines = raw.splitlines()
+    result = []
+    list_stack = []
+
+    def close_lists(min_indent=-1):
+        while list_stack and list_stack[-1]['indent'] >= min_indent:
+            current = list_stack.pop()
+            if current['li_open']:
+                result.append('</li>')
+            result.append(f"</{current['type']}>")
+
+    def ensure_list(indent, list_type):
+        if not list_stack:
+            result.append(f'<{list_type}>')
+            list_stack.append({'indent': indent, 'type': list_type, 'li_open': False})
+            return
+
+        current = list_stack[-1]
+        if indent > current['indent']:
+            result.append(f'<{list_type}>')
+            list_stack.append({'indent': indent, 'type': list_type, 'li_open': False})
+            return
+
+        while list_stack and indent < list_stack[-1]['indent']:
+            current = list_stack.pop()
+            if current['li_open']:
+                result.append('</li>')
+            result.append(f"</{current['type']}>")
+
+        if not list_stack:
+            result.append(f'<{list_type}>')
+            list_stack.append({'indent': indent, 'type': list_type, 'li_open': False})
+            return
+
+        current = list_stack[-1]
+        if current['type'] != list_type:
+            if current['li_open']:
+                result.append('</li>')
+            result.append(f"</{current['type']}>")
+            list_stack.pop()
+            result.append(f'<{list_type}>')
+            list_stack.append({'indent': indent, 'type': list_type, 'li_open': False})
+
+    for line in lines:
+        list_match = re.match(r'^(\s*)([-*]|\d+(?:\.\d+)*\.?)\s+(.+)$', line)
+        if not list_match:
+            continue
+
+        indent = len(list_match.group(1).replace('\t', '    '))
+        marker = list_match.group(2)
+        list_type = 'ul' if marker in ('-', '*') else 'ol'
+        content = inline_markdown_to_html(list_match.group(3))
+
+        ensure_list(indent, list_type)
+        current = list_stack[-1]
+        if current['li_open']:
+            result.append('</li>')
+        marker_attr = f' data-marker="{escape(marker)}"' if list_type == 'ol' else ''
+        result.append(f'<li{marker_attr}>{content}')
+        current['li_open'] = True
+
+    if list_stack:
+        close_lists(0)
+
+    return ''.join(result)
+
+def markdown_to_html(md, source_offset=0):
+    """Convert markdown to HTML with source span metadata."""
+    slug_counts = {}
+    blocks = split_markdown_blocks(md, source_offset=source_offset)
+    rendered_blocks = []
+
+    for block in blocks:
+        raw = block['raw']
+        block_type = block['type']
+
+        if block_type == 'heading':
+            match = re.match(r'^(#{1,6})\s+(.+?)\s*$', raw.rstrip('\n'))
+            if not match:
+                continue
+            level = len(match.group(1))
+            html = render_heading(level, inline_markdown_to_html(match.group(2)), slug_counts)
+        elif block_type == 'paragraph':
+            lines = [inline_markdown_to_html(line) for line in raw.rstrip('\n').split('\n')]
+            html = '<p>' + '<br>\n'.join(lines) + '</p>'
+        elif block_type == 'blockquote':
+            html = render_blockquote_block(raw)
+        elif block_type == 'table':
+            html = render_table_block(raw)
+        elif block_type == 'list':
+            html = render_list_block(raw)
+        elif block_type == 'code':
+            html = render_code_block(raw)
+        elif block_type == 'hr':
+            html = '<hr>'
+        else:
+            continue
+
+        rendered_blocks.append(wrap_source_block(html, block['start'], block['end'], block_type))
+
+    return '\n'.join(rendered_blocks)
 
 def extract_fenced_code_blocks(text):
     """Replace fenced code blocks with placeholders until paragraph wrapping is done."""
@@ -307,10 +541,10 @@ def render_template(template_name, markdown_content):
         template = f.read()
 
     # Parse frontmatter
-    frontmatter, body = parse_frontmatter(markdown_content)
+    frontmatter, body, body_start = parse_frontmatter(markdown_content)
 
     # Convert markdown to HTML
-    content_html = markdown_to_html(body)
+    content_html = markdown_to_html(body, source_offset=body_start)
 
     prepared_for = frontmatter.get('prepared for') or frontmatter.get('client')
 

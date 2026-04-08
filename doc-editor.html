@@ -172,6 +172,9 @@
     let aiProviders = [];
     let commentsLoaded = false;
     let pendingCommentsSave = null;
+    let previewSelectionFrame = null;
+    let previewSelectionListener = null;
+    let styledPreviewObjectUrl = null;
 
     function getOutputPath(ext) {
       const basename = outputBasenameInput.value || defaultBasename;
@@ -409,8 +412,11 @@ In template mode, edit plain markdown and generate styled PDFs.`;
 
     function updateHtmlPreview() {
       const blob = new Blob([editor.value], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      styledPreview.src = url;
+      if (styledPreviewObjectUrl) {
+        URL.revokeObjectURL(styledPreviewObjectUrl);
+      }
+      styledPreviewObjectUrl = URL.createObjectURL(blob);
+      styledPreview.src = styledPreviewObjectUrl;
     }
 
     function updateTemplatePreview() {
@@ -424,8 +430,11 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       .then(r => r.text())
       .then(html => {
         const blob = new Blob([html], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        styledPreview.src = url;
+        if (styledPreviewObjectUrl) {
+          URL.revokeObjectURL(styledPreviewObjectUrl);
+        }
+        styledPreviewObjectUrl = URL.createObjectURL(blob);
+        styledPreview.src = styledPreviewObjectUrl;
       })
       .catch(err => {
         console.error('Preview error:', err);
@@ -824,6 +833,217 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       };
     }
 
+    function normalizeMarkdownBlockSource(raw) {
+      const normalized = [];
+      const map = [];
+      const lines = raw.replace(/\r/g, '').split('\n');
+
+      function appendChar(char, sourceIndex) {
+        normalized.push(char);
+        map.push(sourceIndex);
+      }
+
+      function appendInline(line, lineOffset, contentStart = 0, options = {}) {
+        const { tableMode = false } = options;
+        let i = contentStart;
+
+        while (i < line.length) {
+          if (tableMode && line[i] === '|') {
+            i += 1;
+            continue;
+          }
+
+          if (line.startsWith('**', i) || line.startsWith('__', i)) {
+            i += 2;
+            continue;
+          }
+
+          if (line[i] === '*' || line[i] === '_' || line[i] === '`') {
+            i += 1;
+            continue;
+          }
+
+          if (line[i] === '[') {
+            const closeBracket = line.indexOf(']', i + 1);
+            const openParen = closeBracket >= 0 ? line.indexOf('(', closeBracket) : -1;
+            const closeParen = openParen >= 0 ? line.indexOf(')', openParen) : -1;
+            if (closeBracket >= 0 && openParen === closeBracket + 1 && closeParen >= 0) {
+              for (let j = i + 1; j < closeBracket; j += 1) {
+                appendChar(line[j], lineOffset + j);
+              }
+              i = closeParen + 1;
+              continue;
+            }
+          }
+
+          appendChar(line[i], lineOffset + i);
+          i += 1;
+        }
+      }
+
+      let runningOffset = 0;
+      lines.forEach((line, index) => {
+        const trimmed = line.trim();
+        let markerMatch = null;
+
+        if (trimmed.startsWith('```')) {
+          runningOffset += line.length + 1;
+          if (index < lines.length - 1) {
+            appendChar('\n', runningOffset - 1);
+          }
+          return;
+        }
+
+        if ((markerMatch = line.match(/^(\s*)(#{1,6})\s+/))) {
+          appendInline(line, runningOffset, markerMatch[0].length);
+        } else if ((markerMatch = line.match(/^(\s*)>\s?/))) {
+          appendInline(line, runningOffset, markerMatch[0].length);
+        } else if ((markerMatch = line.match(/^(\s*)([-*]|\d+(?:\.\d+)*\.?)\s+/))) {
+          appendInline(line, runningOffset, markerMatch[0].length);
+        } else if (trimmed.startsWith('|')) {
+          if (!/^[\s|:-]+$/.test(trimmed)) {
+            appendInline(line, runningOffset, 0, { tableMode: true });
+          }
+        } else if (!/^---+\s*$/.test(trimmed)) {
+          appendInline(line, runningOffset, 0);
+        }
+
+        runningOffset += line.length + 1;
+        if (index < lines.length - 1 && normalized.length) {
+          appendChar('\n', runningOffset - 1);
+        }
+      });
+
+      return {
+        text: normalized.join(''),
+        map
+      };
+    }
+
+    function getSelectionOffsetWithinBlock(blockElement, container, offset) {
+      const doc = blockElement.ownerDocument;
+      const range = doc.createRange();
+      range.selectNodeContents(blockElement);
+      range.setEnd(container, offset);
+      return range.toString().length;
+    }
+
+    function sourceOffsetFromNormalizedOffset(map, normalizedOffset, rawLength) {
+      if (!map.length) {
+        return 0;
+      }
+      if (normalizedOffset <= 0) {
+        return map[0];
+      }
+      if (normalizedOffset >= map.length) {
+        return rawLength;
+      }
+      return map[normalizedOffset];
+    }
+
+    function getSourceBlockElement(node) {
+      if (!node) {
+        return null;
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        return node.closest('[data-source-start]');
+      }
+      return node.parentElement ? node.parentElement.closest('[data-source-start]') : null;
+    }
+
+    function resolvePreviewSelectionFromRange(range) {
+      if (!range || range.collapsed) {
+        return null;
+      }
+
+      const startBlock = getSourceBlockElement(range.startContainer);
+      const endBlock = getSourceBlockElement(range.endContainer);
+
+      if (!startBlock || !endBlock) {
+        return null;
+      }
+
+      const sourceBlocks = Array.from(range.commonAncestorContainer.ownerDocument.querySelectorAll('[data-source-start]'))
+        .filter(block => range.intersectsNode(block))
+        .sort((a, b) => Number(a.dataset.sourceStart) - Number(b.dataset.sourceStart));
+
+      if (!sourceBlocks.length) {
+        return null;
+      }
+
+      const firstBlock = sourceBlocks[0];
+      const lastBlock = sourceBlocks[sourceBlocks.length - 1];
+
+      const firstStart = Number(firstBlock.dataset.sourceStart);
+      const firstEnd = Number(firstBlock.dataset.sourceEnd);
+      const lastStart = Number(lastBlock.dataset.sourceStart);
+      const lastEnd = Number(lastBlock.dataset.sourceEnd);
+
+      const firstRaw = editor.value.slice(firstStart, firstEnd);
+      const lastRaw = editor.value.slice(lastStart, lastEnd);
+      const firstNormalized = normalizeMarkdownBlockSource(firstRaw);
+      const lastNormalized = normalizeMarkdownBlockSource(lastRaw);
+
+      const selectionStartInFirst = getSelectionOffsetWithinBlock(firstBlock, range.startContainer, range.startOffset);
+      const selectionEndInLast = getSelectionOffsetWithinBlock(lastBlock, range.endContainer, range.endOffset);
+
+      const sourceStart = firstStart + sourceOffsetFromNormalizedOffset(firstNormalized.map, selectionStartInFirst, firstRaw.length);
+      const sourceEnd = lastStart + sourceOffsetFromNormalizedOffset(lastNormalized.map, selectionEndInLast, lastRaw.length);
+
+      if (!Number.isInteger(sourceStart) || !Number.isInteger(sourceEnd) || sourceEnd <= sourceStart) {
+        return null;
+      }
+
+      return {
+        start: sourceStart,
+        end: sourceEnd,
+        text: editor.value.slice(sourceStart, sourceEnd),
+        previewText: range.toString(),
+        origin: 'preview'
+      };
+    }
+
+    function handlePreviewSelectionChange() {
+      const previewDoc = styledPreview.contentDocument;
+      const selection = previewDoc?.getSelection ? previewDoc.getSelection() : null;
+
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        return;
+      }
+
+      const resolved = resolvePreviewSelectionFromRange(selection.getRangeAt(0));
+      if (!resolved) {
+        return;
+      }
+
+      currentSelection = resolved;
+      selectionCard.classList.remove('empty');
+      selectionPreview.textContent = resolved.previewText || resolved.text;
+      applySelectionBtn.disabled = false;
+    }
+
+    function bindStyledPreviewSelectionCapture() {
+      const previewDoc = styledPreview.contentDocument;
+      if (!previewDoc) {
+        return;
+      }
+
+      if (previewSelectionFrame && previewSelectionListener) {
+        previewSelectionFrame.removeEventListener('mouseup', previewSelectionListener, true);
+        previewSelectionFrame.removeEventListener('keyup', previewSelectionListener, true);
+        previewSelectionFrame.removeEventListener('selectionchange', previewSelectionListener, true);
+      }
+
+      previewSelectionFrame = previewDoc;
+      previewSelectionListener = () => {
+        handlePreviewSelectionChange();
+      };
+
+      previewDoc.addEventListener('mouseup', previewSelectionListener, true);
+      previewDoc.addEventListener('keyup', previewSelectionListener, true);
+      previewDoc.addEventListener('selectionchange', previewSelectionListener, true);
+    }
+
     function snapshotEditorSelection() {
       const selection = getCurrentSelection();
       if (selection) {
@@ -852,7 +1072,7 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       }
 
       selectionCard.classList.remove('empty');
-      selectionPreview.textContent = currentSelection.text;
+      selectionPreview.textContent = currentSelection.previewText || currentSelection.text;
       applySelectionBtn.disabled = false;
     }
 
@@ -1107,6 +1327,10 @@ In template mode, edit plain markdown and generate styled PDFs.`;
 
     aiProviderSelect.addEventListener('change', () => {
       renderAiModelOptions();
+    });
+
+    styledPreview.addEventListener('load', () => {
+      bindStyledPreviewSelectionCapture();
     });
 
     document.addEventListener('mousedown', (event) => {
