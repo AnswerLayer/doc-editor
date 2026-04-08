@@ -592,6 +592,18 @@ def generate_pdf_from_html(html_path, pdf_path):
         html_path
     ], capture_output=True, text=True, timeout=30)
 
+def generate_png_from_html(html_path, png_path, width, height, scale_factor=2):
+    """Render a high-resolution PNG from an HTML file with headless Chrome."""
+    subprocess.run([
+        CHROME_PATH,
+        "--headless=new",
+        "--disable-gpu",
+        f"--force-device-scale-factor={scale_factor}",
+        f"--screenshot={png_path}",
+        f"--window-size={width},{height}",
+        html_path
+    ], capture_output=True, text=True, timeout=30)
+
 def get_pdf_page_count(pdf_path):
     """Read PDF page count through Spotlight metadata, with a raw PDF fallback."""
     result = subprocess.run([
@@ -1303,14 +1315,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return
 
             try:
-                result = subprocess.run([
-                    CHROME_PATH,
-                    "--headless=new",
-                    "--disable-gpu",
-                    f"--screenshot={png_path}",
-                    f"--window-size={width},{height}",
-                    html_path
-                ], capture_output=True, text=True, timeout=30)
+                generate_png_from_html(html_path, png_path, width, height, scale_factor=2)
 
                 if os.path.exists(png_path):
                     size = os.path.getsize(png_path)
@@ -1373,14 +1378,7 @@ class Handler(SimpleHTTPRequestHandler):
             temp_html.close()
 
             try:
-                result = subprocess.run([
-                    CHROME_PATH,
-                    "--headless=new",
-                    "--disable-gpu",
-                    f"--screenshot={png_path}",
-                    f"--window-size={width},{height}",
-                    temp_html.name
-                ], capture_output=True, text=True, timeout=30)
+                generate_png_from_html(temp_html.name, png_path, width, height, scale_factor=2)
 
                 if os.path.exists(png_path):
                     size = os.path.getsize(png_path)
