@@ -61,8 +61,9 @@
     }
 
     .cover {
-      position: relative;
-      min-height: calc(11in - var(--page-padding-top) - var(--page-padding-bottom));
+      min-height: calc(10.15in - var(--page-padding-top) - var(--page-padding-bottom));
+      display: flex;
+      flex-direction: column;
       page-break-after: always;
       break-after: page;
     }
@@ -82,9 +83,10 @@
     }
 
     .cover-meta {
-      position: absolute;
-      right: 0.08in;
-      bottom: 1.02in;
+      margin-top: auto;
+      margin-left: auto;
+      margin-right: 0.08in;
+      margin-bottom: 1.02in;
       width: 2.15in;
       text-align: left;
       font-size: 12px;
