@@ -277,6 +277,27 @@
       word-break: break-word;
       line-height: 1.45;
     }
+
+    img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 0.18in 0;
+    }
+
+    img[data-missing] {
+      display: inline-block;
+      padding: 0.06in 0.12in;
+      border: 1px dashed #b00020;
+      background: #fff5f5;
+      color: #b00020;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+    }
+
+    img[data-missing]::after {
+      content: "missing image: " attr(data-missing);
+    }
   </style>
 </head>
 <body>

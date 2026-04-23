@@ -422,7 +422,8 @@ In template mode, edit plain markdown and generate styled PDFs.`;
     function updateTemplatePreview() {
       const template = templateSelect.value || 'answerlayer-branded.html';
       // Send markdown to server for rendering
-      fetch('/render-markdown?template=' + encodeURIComponent(template), {
+      const fileQuery = filePath ? '&file=' + encodeURIComponent(filePath) : '';
+      fetch('/render-markdown?template=' + encodeURIComponent(template) + fileQuery, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: editor.value

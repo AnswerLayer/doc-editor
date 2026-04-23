@@ -11,6 +11,8 @@ import time
 import unicodedata
 import shutil
 import hashlib
+import base64
+import mimetypes
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -41,7 +43,32 @@ def parse_frontmatter(content):
 
     return frontmatter, body, body_start
 
-def inline_markdown_to_html(text):
+def resolve_image_src(src, base_dir):
+    """Resolve an image src to a data URI if it points to a local file."""
+    src = src.strip()
+    if src.startswith(('http://', 'https://', 'data:')):
+        return src
+
+    if os.path.isabs(src):
+        path = src
+    elif base_dir:
+        path = os.path.normpath(os.path.join(base_dir, src))
+    else:
+        return src
+
+    if not os.path.isfile(path):
+        return None
+
+    mime, _ = mimetypes.guess_type(path)
+    if not mime:
+        mime = 'application/octet-stream'
+
+    with open(path, 'rb') as f:
+        encoded = base64.b64encode(f.read()).decode('ascii')
+
+    return f'data:{mime};base64,{encoded}'
+
+def inline_markdown_to_html(text, base_dir=None):
     """Convert a markdown inline string to HTML."""
     placeholders = {}
 
@@ -50,7 +77,15 @@ def inline_markdown_to_html(text):
         placeholders[key] = f'<code>{escape(match.group(1))}</code>'
         return key
 
+    def replace_image(match):
+        alt = match.group(1)
+        resolved = resolve_image_src(match.group(2), base_dir)
+        if resolved is None:
+            return f'<img alt="{escape(alt)}" data-missing="{escape(match.group(2))}">'
+        return f'<img src="{escape(resolved)}" alt="{escape(alt)}">'
+
     html = re.sub(r'`([^`\n]+)`', replace_code, text)
+    html = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_image, html)
     html = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html)
     html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
     html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
@@ -205,21 +240,21 @@ def render_code_block(raw):
     language_attr = f' class="language-{escape(language)}"' if language else ''
     return f'<pre><code{language_attr}>{escape("\n".join(code_lines))}</code></pre>'
 
-def render_blockquote_block(raw):
+def render_blockquote_block(raw, base_dir=None):
     """Render a blockquote block."""
     parts = []
     for line in raw.splitlines():
         content = re.sub(r'^\s*>\s?', '', line)
-        parts.append(f'<p>{inline_markdown_to_html(content)}</p>')
+        parts.append(f'<p>{inline_markdown_to_html(content, base_dir)}</p>')
     return '<blockquote>' + ''.join(parts) + '</blockquote>'
 
-def render_table_block(raw):
+def render_table_block(raw, base_dir=None):
     """Render a markdown table block."""
     lines = [line.strip() for line in raw.splitlines() if line.strip()]
     if not lines:
         return ''
 
-    rows = [[inline_markdown_to_html(cell.strip()) for cell in line.strip('|').split('|')] for line in lines]
+    rows = [[inline_markdown_to_html(cell.strip(), base_dir) for cell in line.strip('|').split('|')] for line in lines]
     header = rows[0]
     body_rows = rows[2:] if len(rows) > 1 and re.match(r'^[\|\s\-:]+$', lines[1]) else rows[1:]
 
@@ -228,7 +263,7 @@ def render_table_block(raw):
     html.append('</table>')
     return ''.join(html)
 
-def render_list_block(raw):
+def render_list_block(raw, base_dir=None):
     """Render a markdown list block."""
     lines = raw.splitlines()
     result = []
@@ -281,7 +316,7 @@ def render_list_block(raw):
         indent = len(list_match.group(1).replace('\t', '    '))
         marker = list_match.group(2)
         list_type = 'ul' if marker in ('-', '*') else 'ol'
-        content = inline_markdown_to_html(list_match.group(3))
+        content = inline_markdown_to_html(list_match.group(3), base_dir)
 
         ensure_list(indent, list_type)
         current = list_stack[-1]
@@ -296,7 +331,7 @@ def render_list_block(raw):
 
     return ''.join(result)
 
-def markdown_to_html(md, source_offset=0):
+def markdown_to_html(md, source_offset=0, base_dir=None):
     """Convert markdown to HTML with source span metadata."""
     slug_counts = {}
     blocks = split_markdown_blocks(md, source_offset=source_offset)
@@ -311,16 +346,16 @@ def markdown_to_html(md, source_offset=0):
             if not match:
                 continue
             level = len(match.group(1))
-            html = render_heading(level, inline_markdown_to_html(match.group(2)), slug_counts)
+            html = render_heading(level, inline_markdown_to_html(match.group(2), base_dir), slug_counts)
         elif block_type == 'paragraph':
-            lines = [inline_markdown_to_html(line) for line in raw.rstrip('\n').split('\n')]
+            lines = [inline_markdown_to_html(line, base_dir) for line in raw.rstrip('\n').split('\n')]
             html = '<p>' + '<br>\n'.join(lines) + '</p>'
         elif block_type == 'blockquote':
-            html = render_blockquote_block(raw)
+            html = render_blockquote_block(raw, base_dir)
         elif block_type == 'table':
-            html = render_table_block(raw)
+            html = render_table_block(raw, base_dir)
         elif block_type == 'list':
-            html = render_list_block(raw)
+            html = render_list_block(raw, base_dir)
         elif block_type == 'code':
             html = render_code_block(raw)
         elif block_type == 'hr':
@@ -531,7 +566,7 @@ def wrap_paragraphs(html):
     flush_para()
     return '\n'.join(result)
 
-def render_template(template_name, markdown_content):
+def render_template(template_name, markdown_content, base_dir=None):
     """Render markdown content through a template."""
     template_path = os.path.join(TEMPLATES_DIR, template_name)
 
@@ -545,7 +580,7 @@ def render_template(template_name, markdown_content):
     frontmatter, body, body_start = parse_frontmatter(markdown_content)
 
     # Convert markdown to HTML
-    content_html = markdown_to_html(body, source_offset=body_start)
+    content_html = markdown_to_html(body, source_offset=body_start, base_dir=base_dir)
 
     prepared_for = frontmatter.get('prepared for') or frontmatter.get('client')
 
@@ -642,9 +677,9 @@ def get_pdf_page_count(pdf_path):
 
     raise ValueError(f"Unable to determine page count for {pdf_path}: {value or result.stderr.strip()}")
 
-def render_markdown_to_temp_html(template_name, markdown_content):
+def render_markdown_to_temp_html(template_name, markdown_content, base_dir=None):
     """Render markdown through a template into a temporary HTML file."""
-    html, error = render_template(template_name, markdown_content)
+    html, error = render_template(template_name, markdown_content, base_dir=base_dir)
     if error:
         return None, error
 
@@ -653,9 +688,9 @@ def render_markdown_to_temp_html(template_name, markdown_content):
     temp_html.close()
     return temp_html.name, None
 
-def estimate_pdf_pages(template_name, markdown_content):
+def estimate_pdf_pages(template_name, markdown_content, base_dir=None):
     """Estimate PDF page count by rendering the templated markdown to a temporary PDF."""
-    temp_html_path, error = render_markdown_to_temp_html(template_name, markdown_content)
+    temp_html_path, error = render_markdown_to_temp_html(template_name, markdown_content, base_dir=base_dir)
     if error:
         return None, error
 
@@ -1077,7 +1112,7 @@ class Handler(SimpleHTTPRequestHandler):
             if filepath and os.path.exists(filepath):
                 with open(filepath, 'r') as f:
                     markdown_content = f.read()
-                html, error = render_template(template, markdown_content)
+                html, error = render_template(template, markdown_content, base_dir=os.path.dirname(filepath))
                 if error:
                     self.send_response(500)
                     self.end_headers()
@@ -1196,11 +1231,13 @@ class Handler(SimpleHTTPRequestHandler):
             # Render markdown through template (POST with body)
             params = parse_qs(parsed.query)
             template = params.get('template', ['answerlayer-branded.html'])[0]
+            source_file = params.get('file', [None])[0]
+            base_dir = os.path.dirname(source_file) if source_file else None
 
             length = int(self.headers.get('Content-Length', 0))
             if length > 0:
                 markdown_content = self.rfile.read(length).decode('utf-8')
-                html, error = render_template(template, markdown_content)
+                html, error = render_template(template, markdown_content, base_dir=base_dir)
                 if error:
                     self.send_response(500)
                     self.end_headers()
@@ -1218,12 +1255,13 @@ class Handler(SimpleHTTPRequestHandler):
         elif parsed.path == '/estimate-pdf-pages':
             params = parse_qs(parsed.query)
             template = params.get('template', ['midas-branded.html'])[0]
+            md_path = params.get('file', [None])[0]
+            base_dir = os.path.dirname(md_path) if md_path else None
 
             length = int(self.headers.get('Content-Length', 0))
             if length > 0:
                 markdown_content = self.rfile.read(length).decode('utf-8')
             else:
-                md_path = params.get('file', [None])[0]
                 if md_path and os.path.exists(md_path):
                     with open(md_path, 'r') as f:
                         markdown_content = f.read()
@@ -1233,7 +1271,7 @@ class Handler(SimpleHTTPRequestHandler):
                     self.wfile.write(b'No content provided')
                     return
 
-            page_count, error = estimate_pdf_pages(template, markdown_content)
+            page_count, error = estimate_pdf_pages(template, markdown_content, base_dir=base_dir)
             if error:
                 self.send_response(500)
                 self.end_headers()
@@ -1275,7 +1313,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return
 
             # Render through template
-            temp_html_path, error = render_markdown_to_temp_html(template, markdown_content)
+            temp_html_path, error = render_markdown_to_temp_html(template, markdown_content, base_dir=os.path.dirname(md_path))
             if error:
                 self.send_response(500)
                 self.end_headers()
@@ -1380,7 +1418,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.wfile.write(b'Markdown file not found')
                 return
 
-            html, error = render_template(template, markdown_content)
+            html, error = render_template(template, markdown_content, base_dir=os.path.dirname(md_path))
             if error:
                 self.send_response(500)
                 self.end_headers()
@@ -1497,7 +1535,7 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 reference_docx = get_reference_docx_for_template(template) if template else None
                 if template:
-                    temp_html_path, error = render_markdown_to_temp_html(template, markdown_content)
+                    temp_html_path, error = render_markdown_to_temp_html(template, markdown_content, base_dir=os.path.dirname(md_path))
                     if error:
                         self.send_response(500)
                         self.end_headers()
