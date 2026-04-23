@@ -1314,7 +1314,7 @@ class Handler(SimpleHTTPRequestHandler):
             html_path = params.get('html', [None])[0]
             png_path = params.get('png', [None])[0]
             width = params.get('width', ['1200'])[0]
-            height = params.get('height', ['800'])[0]
+            height = params.get('height', ['1600'])[0]
 
             if not html_path or not png_path:
                 self.send_response(400)
@@ -1358,7 +1358,7 @@ class Handler(SimpleHTTPRequestHandler):
             png_path = params.get('png', [None])[0]
             template = params.get('template', ['answerlayer-branded.html'])[0]
             width = params.get('width', ['1200'])[0]
-            height = params.get('height', ['800'])[0]
+            height = params.get('height', ['1600'])[0]
 
             if not md_path or not png_path:
                 self.send_response(400)
