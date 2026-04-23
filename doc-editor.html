@@ -578,7 +578,12 @@ In template mode, edit plain markdown and generate styled PDFs.`;
       let generateUrl;
       let fetchOptions = { method: 'POST' };
 
-      if (isTemplateMode || isMarkdownMode) {
+      if (isTemplateMode) {
+        const template = templateSelect.value || 'answerlayer-branded.html';
+        generateUrl = `/generate-docx-from-markdown?file=${encodeURIComponent(filePath)}&docx=${encodeURIComponent(getOutputPath('.docx'))}&template=${encodeURIComponent(template)}`;
+        fetchOptions.headers = { 'Content-Type': 'text/plain' };
+        fetchOptions.body = editor.value;
+      } else if (isMarkdownMode) {
         generateUrl = `/generate-docx-from-markdown?file=${encodeURIComponent(filePath)}&docx=${encodeURIComponent(getOutputPath('.docx'))}`;
         fetchOptions.headers = { 'Content-Type': 'text/plain' };
         fetchOptions.body = editor.value;

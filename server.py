@@ -17,6 +17,7 @@ CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 PANDOC_PATH = "/opt/homebrew/bin/pandoc"
 TEMPLATES_DIR = os.path.join(SCRIPT_DIR, "templates")
 COMMENTS_DIR = os.path.join(SCRIPT_DIR, "comment_data")
+MIDAS_REFERENCE_DOCX = os.path.join(TEMPLATES_DIR, "midas-reference.docx")
 DEFAULT_AI_BASE_URL = os.getenv("DOC_EDITOR_AI_BASE_URL") or os.getenv("RLMKIT_BASE_URL") or "http://127.0.0.1:8082/v1"
 DEFAULT_AI_API_KEY = os.getenv("DOC_EDITOR_AI_API_KEY") or os.getenv("RLMKIT_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
 DEFAULT_AI_MODEL = os.getenv("DOC_EDITOR_AI_MODEL") or os.getenv("DOC_EDITOR_MODEL") or ""
@@ -603,6 +604,19 @@ def generate_png_from_html(html_path, png_path, width, height, scale_factor=2):
         f"--window-size={width},{height}",
         html_path
     ], capture_output=True, text=True, timeout=30)
+
+def get_reference_docx_for_template(template_name):
+    """Return a DOCX reference file for a known template, if available."""
+    if template_name == 'midas-branded.html' and os.path.exists(MIDAS_REFERENCE_DOCX):
+        return MIDAS_REFERENCE_DOCX
+    return None
+
+def build_pandoc_docx_command(source_path, docx_path, reference_docx=None):
+    """Build a pandoc command with an optional reference DOCX."""
+    command = [PANDOC_PATH, source_path, "-o", docx_path]
+    if reference_docx:
+        command.extend(["--reference-doc", reference_docx])
+    return command
 
 def get_pdf_page_count(pdf_path):
     """Read PDF page count through Spotlight metadata, with a raw PDF fallback."""
@@ -1407,6 +1421,7 @@ class Handler(SimpleHTTPRequestHandler):
             params = parse_qs(parsed.query)
             html_path = params.get('html', [None])[0]
             docx_path = params.get('docx', [None])[0]
+            template = params.get('template', [None])[0]
 
             if not html_path or not docx_path:
                 self.send_response(400)
@@ -1421,11 +1436,16 @@ class Handler(SimpleHTTPRequestHandler):
                 return
 
             try:
-                result = subprocess.run([
-                    PANDOC_PATH,
-                    html_path,
-                    "-o", docx_path
-                ], capture_output=True, text=True, timeout=30)
+                result = subprocess.run(
+                    build_pandoc_docx_command(
+                        html_path,
+                        docx_path,
+                        reference_docx=get_reference_docx_for_template(template) if template else None,
+                    ),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
 
                 if os.path.exists(docx_path):
                     size = os.path.getsize(docx_path)
@@ -1453,6 +1473,7 @@ class Handler(SimpleHTTPRequestHandler):
             params = parse_qs(parsed.query)
             md_path = params.get('file', [None])[0]
             docx_path = params.get('docx', [None])[0]
+            template = params.get('template', [None])[0]
 
             if not md_path or not docx_path:
                 self.send_response(400)
@@ -1474,12 +1495,36 @@ class Handler(SimpleHTTPRequestHandler):
                 return
 
             try:
-                # Pandoc can convert markdown directly to docx
-                result = subprocess.run([
-                    PANDOC_PATH,
-                    md_path,
-                    "-o", docx_path
-                ], capture_output=True, text=True, timeout=30)
+                reference_docx = get_reference_docx_for_template(template) if template else None
+                if template:
+                    temp_html_path, error = render_markdown_to_temp_html(template, markdown_content)
+                    if error:
+                        self.send_response(500)
+                        self.end_headers()
+                        self.wfile.write(error.encode('utf-8'))
+                        return
+
+                    try:
+                        result = subprocess.run(
+                            build_pandoc_docx_command(
+                                temp_html_path,
+                                docx_path,
+                                reference_docx=reference_docx,
+                            ),
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                        )
+                    finally:
+                        if os.path.exists(temp_html_path):
+                            os.unlink(temp_html_path)
+                else:
+                    result = subprocess.run(
+                        build_pandoc_docx_command(md_path, docx_path),
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
 
                 if os.path.exists(docx_path):
                     size = os.path.getsize(docx_path)
