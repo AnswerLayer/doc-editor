@@ -22,3 +22,7 @@ Thumbs.db
 
 # Generated PDFs (optional - uncomment if you want to ignore)
 # *.pdf
+
+# Runtime data
+comment_data/
+references/
